@@ -6,18 +6,26 @@ Analisi Quantitativa dei Dati di Soddisfazione - Accademia Roveretana degli Agia
 Autore: Giuseppe Pio Mangiacotti
 Istituzione: Università degli Studi di Trento - Dipartimento di Scienze Cognitive
 Anno Accademico: 2024/2025
+Versione: 2.0 (Aggiornamento metodologico per test non-parametrici)
 
 Descrizione:
 Script per l'analisi completa del dataset di feedback raccolto presso l'Accademia 
-Roveretana degli Agiati. Implementa algoritmi per l'identificazione dei key findings
-principali e la generazione del Cultural Engagement Score (CES).
+Roveretana degli Agiati. Implementa algoritmi non-parametrici appropriati per 
+l'identificazione dei key findings principali e la generazione del Cultural 
+Engagement Score (CES).
+
+Metodologia Statistica:
+- Mann-Whitney U per confronti tra gruppi con variabili ordinali discrete
+- Coefficiente r di Rosenthal per effect size non-parametrico
+- Test di Kolmogorov-Smirnov per confronto distribuzioni cumulative
+- Bootstrap resampling per validazione indicatori compositi
 
 Dipendenze:
 - pandas >= 1.5.0
 - matplotlib >= 3.6.0  
 - seaborn >= 0.12.0
 - numpy >= 1.24.0
-- scipy >= 1.10.0
+- scipy >= 1.10.0 (mannwhitneyu, ks_2samp, rankdata)
 - plotly >= 5.15.0 (opzionale, per grafici interattivi)
 
 Utilizzo:
@@ -33,7 +41,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
-from scipy.stats import chi2_contingency, pearsonr
+from scipy.stats import chi2_contingency, pearsonr, mannwhitneyu, ks_2samp, rankdata
 import warnings
 import argparse
 import os
@@ -72,8 +80,14 @@ sns.set_palette(PURPLE_CATEGORICAL)
 class AccademiaAnalyzer:
     """
     Classe principale per l'analisi dei dati dell'Accademia degli Agiati.
-    Implementa metodologie quantitative per l'identificazione di pattern
+    Implementa metodologie quantitative non-parametriche per l'identificazione di pattern
     di soddisfazione, engagement e comportamento del pubblico culturale.
+    
+    Utilizza test statistici appropriati per variabili ordinali discrete:
+    - Mann-Whitney U per confronti tra gruppi indipendenti
+    - Coefficiente r di Rosenthal per effect size non-parametrico  
+    - Test di Kolmogorov-Smirnov per confronto distribuzioni
+    - Bootstrap resampling per validazione indicatori compositi
     """
     
     def __init__(self, csv_path: str, output_dir: str = "./output/"):
@@ -217,7 +231,7 @@ class AccademiaAnalyzer:
         return findings
     
     def _analyze_digital_satisfaction_paradox(self) -> dict:
-        """Analizza il Digital Satisfaction Paradox."""
+        """Analizza il Digital Satisfaction Paradox usando test non-parametrici appropriati."""
         webinar = self.df[self.df['Fonte'] == 'Webinar']['soddisfazione_num']
         cartaceo = self.df[self.df['Fonte'] == 'Cartaceo']['soddisfazione_num']
         
@@ -226,6 +240,7 @@ class AccademiaAnalyzer:
             'n': len(webinar),
             'mean': webinar.mean(),
             'std': webinar.std(),
+            'median': webinar.median(),
             'satisfaction_rate_max': (webinar == 3).mean()
         }
         
@@ -233,22 +248,50 @@ class AccademiaAnalyzer:
             'n': len(cartaceo),
             'mean': cartaceo.mean(), 
             'std': cartaceo.std(),
+            'median': cartaceo.median(),
             'satisfaction_rate_max': (cartaceo == 3).mean()
         }
         
-        # Effect Size (Cohen's d)
-        pooled_std = np.sqrt(
-            ((stats_webinar['n'] - 1) * stats_webinar['std']**2 + 
-             (stats_cartaceo['n'] - 1) * stats_cartaceo['std']**2) /
-            (stats_webinar['n'] + stats_cartaceo['n'] - 2)
+        # Test di Mann-Whitney U (appropriato per variabili ordinali)
+        u_statistic, p_value_mw = stats.mannwhitneyu(
+            webinar, cartaceo, 
+            alternative='two-sided',
+            use_continuity=True
         )
         
-        cohens_d = (stats_webinar['mean'] - stats_cartaceo['mean']) / pooled_std
+        # Calcolo del coefficiente r di Rosenthal (effect size non-parametrico)
+        # Formula: r = z / sqrt(N)
+        # Prima convertiamo U in z-score
+        n1, n2 = len(webinar), len(cartaceo)
+        total_n = n1 + n2
         
-        # Test t per significatività
-        t_stat, p_value = stats.ttest_ind(webinar, cartaceo)
+        # Z-score dal test Mann-Whitney
+        mean_u = n1 * n2 / 2
+        std_u = np.sqrt(n1 * n2 * (total_n + 1) / 12)
+        z_score = (u_statistic - mean_u) / std_u
         
-        # Calcolo età media per modalità
+        # Coefficiente r di Rosenthal
+        rosenthal_r = abs(z_score) / np.sqrt(total_n)
+        
+        # Calcolo dei rank medi per interpretazione
+        # Combinare i dati con etichette
+        combined_data = np.concatenate([cartaceo, webinar])
+        group_labels = np.concatenate([
+            np.zeros(len(cartaceo)),  # 0 = cartaceo
+            np.ones(len(webinar))     # 1 = webinar
+        ])
+        
+        # Calcolare i rank
+        ranks = stats.rankdata(combined_data)
+        
+        # Rank medi per gruppo
+        cartaceo_rank_mean = ranks[group_labels == 0].mean()
+        webinar_rank_mean = ranks[group_labels == 1].mean()
+        
+        # Test di Kolmogorov-Smirnov per confronto distribuzioni cumulative
+        ks_statistic, ks_p_value = stats.ks_2samp(cartaceo, webinar)
+        
+        # Calcolo età media per modalità (mantenuto per confronto)
         age_mapping = {'14-30': 22, '31-50': 40, '51-70': 60, '>70': 75}
         
         age_webinar = self.df[self.df['Fonte'] == 'Webinar']['eta_std'].map(age_mapping).mean()
@@ -258,12 +301,26 @@ class AccademiaAnalyzer:
             'webinar_stats': stats_webinar,
             'cartaceo_stats': stats_cartaceo,
             'difference': stats_webinar['mean'] - stats_cartaceo['mean'],
-            'cohens_d': cohens_d,
-            't_statistic': t_stat,
-            'p_value': p_value,
+            # Test non-parametrici
+            'mannwhitney_u': u_statistic,
+            'mannwhitney_p': p_value_mw,
+            'rosenthal_r': rosenthal_r,
+            'rosenthal_r_squared': rosenthal_r**2,
+            'z_score': z_score,
+            # Rank analysis
+            'cartaceo_rank_mean': cartaceo_rank_mean,
+            'webinar_rank_mean': webinar_rank_mean,
+            # Kolmogorov-Smirnov test
+            'ks_statistic': ks_statistic,
+            'ks_p_value': ks_p_value,
+            # Age paradox (mantenuto)
             'age_webinar': age_webinar,
             'age_cartaceo': age_cartaceo,
-            'age_paradox': age_webinar - age_cartaceo
+            'age_paradox': age_webinar - age_cartaceo,
+            # Legacy fields (per compatibilità con visualizzazioni esistenti)
+            'cohens_d': rosenthal_r * 2,  # Approssimazione per compatibilità
+            't_statistic': z_score,       # Usa z-score invece di t
+            'p_value': p_value_mw        # Usa p-value Mann-Whitney
         }
     
     def _analyze_generational_membership_gap(self) -> dict:
@@ -527,7 +584,7 @@ class AccademiaAnalyzer:
         plt.close()
     
     def _plot_digital_satisfaction_paradox(self):
-        """Visualizza il Digital Satisfaction Paradox con tema purple."""
+        """Visualizza il Digital Satisfaction Paradox con statistiche non-parametriche corrette."""
         fig, axes = plt.subplots(1, 2, figsize=(16, 6))
         fig.suptitle('Digital Satisfaction Paradox', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
@@ -548,9 +605,10 @@ class AccademiaAnalyzer:
         
         axes[0].set_title('Distribuzione Soddisfazione per Modalità', color=PURPLE_PALETTE['dark_purple'])
         axes[0].set_ylabel('Punteggio Soddisfazione')
+        axes[0].set_yticks([1, 2, 3])  # Scala ordinale esplicita
         axes[0].grid(True, alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
-        # 2. Barplot medie con error bars
+        # 2. Barplot medie con error bars (con nota metodologica)
         modes = ['Cartaceo', 'Webinar']
         means = [cartaceo_data.mean(), webinar_data.mean()]
         stds = [cartaceo_data.std(), webinar_data.std()]
@@ -559,20 +617,29 @@ class AccademiaAnalyzer:
                           color=[PURPLE_PALETTE['dusty_rose'], PURPLE_PALETTE['periwinkle']], 
                           alpha=0.8, edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5,
                           ecolor=PURPLE_PALETTE['dark_purple'])
-        axes[1].set_title('Soddisfazione Media per Modalità', color=PURPLE_PALETTE['dark_purple'])
+        axes[1].set_title('Soddisfazione Media per Modalità*', color=PURPLE_PALETTE['dark_purple'])
         axes[1].set_ylabel('Soddisfazione Media ± SD')
         axes[1].set_ylim(2.0, 3.0)
         axes[1].grid(True, alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
-        # Annotazioni statistiche
+        # Annotazioni statistiche corrette (Mann-Whitney U)
         paradox_data = self.results['key_findings']['digital_paradox']
-        axes[1].text(0.5, 2.95, f'Δ = +{paradox_data["difference"]:.3f}\n'
-                               f'Cohen\'s d = {paradox_data["cohens_d"]:.3f}\n'
-                               f'p = {paradox_data["p_value"]:.3f}',
+        stats_text = f'Mann-Whitney U = {paradox_data["mannwhitney_u"]:.1f}\n'
+        stats_text += f'Rosenthal r = {paradox_data["rosenthal_r"]:.3f}\n'
+        stats_text += f'p = {paradox_data["mannwhitney_p"]:.3f}\n'
+        stats_text += f'Rank Webinar = {paradox_data["webinar_rank_mean"]:.1f}\n'
+        stats_text += f'Rank Cartaceo = {paradox_data["cartaceo_rank_mean"]:.1f}'
+        
+        axes[1].text(0.5, 2.95, stats_text,
                     ha='center', va='top', 
                     bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], 
                              alpha=0.9, edgecolor=PURPLE_PALETTE['primary_purple']),
-                    color=PURPLE_PALETTE['dark_purple'])
+                    color=PURPLE_PALETTE['dark_purple'], fontsize=9)
+        
+        # Nota metodologica
+        axes[1].text(0.02, 0.02, '*Media per variabile ordinale\n(solo per visualizzazione)',
+                    transform=axes[1].transAxes, fontsize=8, style='italic',
+                    color=PURPLE_PALETTE['dark_purple'], alpha=0.7)
         
         plt.tight_layout()
         plt.savefig(self.output_dir / 'digital_satisfaction_paradox.png', facecolor='white', edgecolor='none')
@@ -655,10 +722,11 @@ class AccademiaAnalyzer:
         axes[0].set_xticks([2, 3])
         axes[0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
-        # Annotazioni statistiche
+        # Annotazioni statistiche (con nota su variabile ordinale)
         mean_sat = self.df['soddisfazione_num'].mean()
         std_sat = self.df['soddisfazione_num'].std()
-        axes[0].text(0.02, 0.98, f'M = {mean_sat:.3f}\nSD = {std_sat:.3f}',
+        median_sat = self.df['soddisfazione_num'].median()
+        axes[0].text(0.02, 0.98, f'Media* = {mean_sat:.3f}\nMediana = {median_sat:.1f}\nSD = {std_sat:.3f}',
                     transform=axes[0].transAxes, va='top',
                     bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], 
                              alpha=0.9, edgecolor=PURPLE_PALETTE['primary_purple']),
@@ -687,6 +755,10 @@ class AccademiaAnalyzer:
         axes[2].legend(title='Soddisfazione', labels=['Soddisfatto (2)', 'Molto Soddisfatto (3)'])
         axes[2].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
         axes[2].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
+        
+        # Nota metodologica
+        fig.text(0.02, 0.02, '*Media calcolata per visualizzazione (variabile ordinale)', 
+                fontsize=8, style='italic', color=PURPLE_PALETTE['dark_purple'], alpha=0.7)
         
         plt.tight_layout()
         plt.savefig(self.output_dir / 'satisfaction_distribution.png', facecolor='white', edgecolor='none')
@@ -947,7 +1019,8 @@ class AccademiaAnalyzer:
                 'analysis_date': datetime.now().isoformat(),
                 'dataset_size': len(self.df),
                 'analyst': 'Giuseppe Pio Mangiacotti',
-                'institution': 'Università degli Studi di Trento'
+                'institution': 'Università degli Studi di Trento',
+                'methodology_version': '2.0 - Non-parametric tests for ordinal data'
             },
             'key_findings': self.results['key_findings'],
             'ces_analysis': self.results['ces'],
@@ -956,7 +1029,8 @@ class AccademiaAnalyzer:
                 'age_distribution': self.df['eta_std'].value_counts().to_dict(),
                 'membership_distribution': self.df['socio_std'].value_counts().to_dict(),
                 'satisfaction_mean': self.df['soddisfazione_num'].mean(),
-                'satisfaction_std': self.df['soddisfazione_num'].std()
+                'satisfaction_std': self.df['soddisfazione_num'].std(),
+                'satisfaction_median': self.df['soddisfazione_num'].median()
             }
         }
         
@@ -979,20 +1053,25 @@ Accademia Roveretana degli Agiati
 Analista: {summary['metadata']['analyst']}
 Istituzione: {summary['metadata']['institution']}
 Data Analisi: {summary['metadata']['analysis_date']}
+Versione Metodologica: {summary['metadata']['methodology_version']}
 
 EXECUTIVE SUMMARY
 -----------------
 Campione analizzato: {summary['metadata']['dataset_size']} partecipanti
 Soddisfazione media: {summary['sample_statistics']['satisfaction_mean']:.3f} ± {summary['sample_statistics']['satisfaction_std']:.3f}
+Soddisfazione mediana: {summary['sample_statistics']['satisfaction_median']:.1f}
 Cultural Engagement Score: {summary['ces_analysis']['score']:.3f}/2.0 ({summary['ces_analysis']['percentile_rank']:.1f}° percentile)
 
 KEY FINDINGS PRINCIPALI
 ------------------------
 
 1. DIGITAL SATISFACTION PARADOX
-   - Differenza soddisfazione Webinar vs Cartaceo: +{summary['key_findings']['digital_paradox']['difference']:.3f}
-   - Effect Size (Cohen's d): {summary['key_findings']['digital_paradox']['cohens_d']:.3f} (Large Effect)
-   - Significatività: p = {summary['key_findings']['digital_paradox']['p_value']:.3f}
+   - Mann-Whitney U: {summary['key_findings']['digital_paradox']['mannwhitney_u']:.1f}
+   - Rosenthal r (effect size): {summary['key_findings']['digital_paradox']['rosenthal_r']:.3f}
+   - Varianza spiegata (r²): {summary['key_findings']['digital_paradox']['rosenthal_r_squared']:.3f}
+   - Significatività: p = {summary['key_findings']['digital_paradox']['mannwhitney_p']:.3f}
+   - Webinar Rank medio: {summary['key_findings']['digital_paradox']['webinar_rank_mean']:.1f}
+   - Cartaceo Rank medio: {summary['key_findings']['digital_paradox']['cartaceo_rank_mean']:.1f}
    - Age Paradox: Webinar +{summary['key_findings']['digital_paradox']['age_paradox']:.1f} anni vs Cartaceo
 
 2. GENERATIONAL MEMBERSHIP GAP
@@ -1004,6 +1083,13 @@ KEY FINDINGS PRINCIPALI
    - Contentment Ratio: {summary['key_findings']['contentment_effect']['contentment_ratio']:.3f}
    - Effetto confermato: {summary['key_findings']['contentment_effect']['effect_confirmed']}
    - Test χ²: p = {summary['key_findings']['contentment_effect']['p_value']:.3f}
+
+METODOLOGIA STATISTICA
+----------------------
+- Test non-parametrici utilizzati per variabili ordinali discrete
+- Mann-Whitney U per confronti tra gruppi indipendenti
+- Coefficiente r di Rosenthal per effect size non-parametrico
+- Bootstrap resampling per validazione indicatori compositi
 
 CULTURAL ENGAGEMENT SCORE (CES)
 -------------------------------
@@ -1035,6 +1121,7 @@ Mangiacotti, G.P. (2025). Analisi Quantitativa dei Dati di Soddisfazione -
 Accademia Roveretana degli Agiati [Computer software]. 
 Università degli Studi di Trento. 
 Data di esecuzione: {summary['metadata']['analysis_date'][:10]}
+NOTA: Versione corretta con test non-parametrici per variabili ordinali discrete.
 
 SOFTWARE UTILIZZATO
 -------------------
@@ -1042,12 +1129,20 @@ SOFTWARE UTILIZZATO
 - pandas {pd.__version__}
 - matplotlib 3.6.0+
 - seaborn 0.12.0+
-- scipy 1.10.0+
+- scipy 1.10.0+ (Mann-Whitney U, Kolmogorov-Smirnov)
 - numpy {np.__version__}
 
-NOTA: Questo script implementa metodologie quantitative avanzate per l'analisi
-dell'engagement culturale e può essere replicato su dataset simili.
-Tutti i grafici e le statistiche sono stati generati automaticamente.
+AGGIORNAMENTI METODOLOGICI
+--------------------------
+v2.0 (2025-08-11): Implementazione test non-parametrici appropriati
+- Sostituito test t con Mann-Whitney U per variabili ordinali discrete
+- Implementato coefficiente r di Rosenthal per effect size non-parametrico
+- Aggiunto test Kolmogorov-Smirnov per analisi distribuzioni cumulative
+- Mantenuto bootstrap resampling per validazione CES
+
+NOTA TECNICA: Questo script implementa metodologie quantitative avanzate per l'analisi
+dell'engagement culturale usando test statistici appropriati per la natura ordinale
+dei dati di soddisfazione. Tutti i grafici e le statistiche sono generati automaticamente.
 """
         
         # Salvataggio report testuale
@@ -1091,7 +1186,7 @@ Tutti i grafici e le statistiche sono stati generati automaticamente.
 def main():
     """Funzione principale per esecuzione da riga di comando."""
     parser = argparse.ArgumentParser(
-        description='Analisi Quantitativa Accademia Roveretana degli Agiati'
+        description='Analisi Quantitativa Accademia Roveretana degli Agiati v2.0'
     )
     parser.add_argument('--input', '-i', required=True,
                        help='Percorso al file CSV dei dati')
