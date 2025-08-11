@@ -66,7 +66,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
-from scipy.stats import chi2_contingency, pearsonr, mannwhitneyu, ks_2samp, rankdata, fisher_exact
+from scipy.stats import chi2_contingency, pearsonr, mannwhitneyu, ks_2samp, spearmanr, fisher_exact
 import warnings
 import argparse
 import os
@@ -533,18 +533,45 @@ class AccademiaAnalyzer:
                     'engagement_index': engagement_index,
                     'conversion_potential': (1 - membership_rate) * avg_satisfaction * len(cohort)
                 })
-        
         # Correlazione età-membership
         age_numerical = [22, 40, 60, 75]
         membership_rates = [d['membership_rate'] for d in engagement_data]
-        correlation, p_value = pearsonr(age_numerical, membership_rates)
-        
+        correlation_pearson, p_value_pearson = pearsonr(age_numerical, membership_rates)
+        correlation_spearman, p_value_spearman = spearmanr(age_numerical, membership_rates)
+        sample_size = len(age_numerical)
+        normality_feasible = sample_size >= 10
+        self._assess_test_appropriateness(
+            'Correlazione di Spearman',
+            f'Correlazione età-membership con n={sample_size} coorti',
+            True,  
+            'Non-parametrica, appropriata per campioni piccoli e dati ordinali'
+        )
+        self._assess_test_appropriateness(
+            'Correlazione di Pearson',
+            f'Correlazione età-membership con n={sample_size} coorti',
+            normality_feasible,
+            f'Campione troppo piccolo (n={sample_size}) per verificare normalità bivariata' if not normality_feasible else 'Appropriata con verifica normalità'
+        )
+        if not normality_feasible:
+            self._log_methodological_warning(
+                'Correlazione età-membership',
+                f'Campione molto piccolo (n={sample_size}), preferire metodi non-parametrici'
+            )
         return {
             'engagement_metrics': engagement_data,
-            'age_membership_correlation': correlation,
-            'correlation_p_value': p_value,
-            'r_squared': correlation**2
+            'age_membership_correlation': correlation_spearman,  # Usa Spearman come primario
+            'correlation_p_value': p_value_spearman,
+            'r_squared': correlation_spearman**2,
+            # Risultati aggiuntivi per confronto
+            'spearman_correlation': correlation_spearman,
+            'spearman_p_value': p_value_spearman,
+            'pearson_correlation': correlation_pearson,
+            'pearson_p_value': p_value_pearson,
+            'sample_size': sample_size,
+            'normality_test_feasible': normality_feasible,
+            'recommended_method': 'Spearman'
         }
+        
     
     def _analyze_inverse_contentment_effect(self) -> dict:
         """Analizza l'Inverse Contentment Effect."""
