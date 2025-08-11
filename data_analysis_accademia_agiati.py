@@ -41,10 +41,33 @@ from datetime import datetime
 from pathlib import Path
 import json
 
-# Configurazione warnings e stile
 warnings.filterwarnings('ignore')
+
+# ===== PURPLE THEME CONFIGURATION =====
+# Custom purple palette with complementary accents
+PURPLE_PALETTE = {
+    'primary_purple': '#6A4C93',      # Deep purple
+    'light_purple': '#A47FC7',        # Light purple
+    'dark_purple': '#4A2C70',         # Dark purple
+    'lavender': '#C8B8E8',            # Very light purple
+    'royal_purple': '#8B5A9F',        # Royal purple
+    'plum': '#9B59B6',                # Plum
+    'periwinkle': '#8E7CC3',          # Blue-purple
+    'sage': '#87A96B',                # Complementary green
+    'slate_blue': '#6C7B95',          # Blue-gray
+    'warm_gold': '#DAA520',           # Accent gold
+    'soft_teal': '#5D8A8A',           # Muted teal
+    'dusty_rose': '#C49BB0'           # Soft pink-purple
+}
+
+# Color sequences for different needs
+PURPLE_SEQUENTIAL = ['#F3F0FF', '#E6DBFF', '#D9C5FF', '#CCB0FF', '#BF9BFF', '#B386FF', '#A670FF', '#995BFF', '#8C46FF', '#7F31FF']
+PURPLE_DIVERGING = ['#4A2C70', '#6A4C93', '#8B5A9F', '#A47FC7', '#C8B8E8', '#E6DBFF']
+PURPLE_CATEGORICAL = ['#6A4C93', '#87A96B', '#8E7CC3', '#C49BB0', '#5D8A8A', '#DAA520', '#9B59B6', '#6C7B95']
+
+# Set the style and color palette
 plt.style.use('seaborn-v0_8-whitegrid')
-sns.set_palette("husl")
+sns.set_palette(PURPLE_CATEGORICAL)
 
 class AccademiaAnalyzer:
     """
@@ -62,13 +85,13 @@ class AccademiaAnalyzer:
         csv_path : str
             Percorso al file CSV dei dati
         output_dir : str
-            Directory per salvare i risultati
+            Directory di output (default: ./output//)
         """
         self.csv_path = csv_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True, parents=True)
         
-        # Configurazione per grafici publication-ready
+        # Configurazione per grafici publication-ready con tema purple
         plt.rcParams.update({
             'figure.figsize': (12, 8),
             'font.size': 11,
@@ -79,7 +102,8 @@ class AccademiaAnalyzer:
             'legend.fontsize': 10,
             'figure.dpi': 300,
             'savefig.dpi': 300,
-            'savefig.bbox': 'tight'
+            'savefig.bbox': 'tight',
+            'axes.prop_cycle': plt.cycler('color', PURPLE_CATEGORICAL)
         })
         
         self.results = {}  # Storage per tutti i risultati
@@ -455,47 +479,57 @@ class AccademiaAnalyzer:
         print(f"   ✓ Grafici salvati in: {self.output_dir}")
     
     def _plot_demographic_analysis(self):
-        """Crea visualizzazioni demografiche."""
+        """Crea visualizzazioni demografiche con tema purple."""
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        fig.suptitle('Analisi Demografica del Campione', fontsize=16, fontweight='bold')
+        fig.suptitle('Analisi Demografica del Campione', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
         # 1. Distribuzione per età
         age_counts = self.df['eta_std'].value_counts()
-        axes[0,0].bar(age_counts.index, age_counts.values, color='skyblue', alpha=0.8)
-        axes[0,0].set_title('Distribuzione per Fascia d\'Età')
+        bars1 = axes[0,0].bar(age_counts.index, age_counts.values, 
+                             color=PURPLE_PALETTE['primary_purple'], alpha=0.8, 
+                             edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[0,0].set_title('Distribuzione per Fascia d\'Età', color=PURPLE_PALETTE['dark_purple'])
         axes[0,0].set_ylabel('Numero Partecipanti')
-        axes[0,0].tick_params(axis='x', rotation=45)
+        axes[0,0].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[0,0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # 2. Soci vs Non-soci
         member_counts = self.df['socio_std'].value_counts()
-        axes[0,1].pie(member_counts.values, labels=member_counts.index, autopct='%1.1f%%', 
-                     colors=['lightcoral', 'lightblue'])
-        axes[0,1].set_title('Distribuzione Soci vs Non-Soci')
+        colors_pie = [PURPLE_PALETTE['light_purple'], PURPLE_PALETTE['sage']]
+        wedges, texts, autotexts = axes[0,1].pie(member_counts.values, labels=member_counts.index, 
+                                                autopct='%1.1f%%', colors=colors_pie, 
+                                                startangle=90, textprops={'color': PURPLE_PALETTE['dark_purple']})
+        axes[0,1].set_title('Distribuzione Soci vs Non-Soci', color=PURPLE_PALETTE['dark_purple'])
         
         # 3. Soddisfazione per età
         satisfaction_by_age = self.df.groupby('eta_std')['soddisfazione_num'].mean()
-        axes[1,0].bar(satisfaction_by_age.index, satisfaction_by_age.values, 
-                     color='lightgreen', alpha=0.8)
-        axes[1,0].set_title('Soddisfazione Media per Fascia d\'Età')
+        bars3 = axes[1,0].bar(satisfaction_by_age.index, satisfaction_by_age.values, 
+                             color=PURPLE_PALETTE['periwinkle'], alpha=0.8,
+                             edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[1,0].set_title('Soddisfazione Media per Fascia d\'Età', color=PURPLE_PALETTE['dark_purple'])
         axes[1,0].set_ylabel('Soddisfazione Media')
         axes[1,0].set_ylim(2.0, 3.0)
-        axes[1,0].tick_params(axis='x', rotation=45)
+        axes[1,0].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[1,0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # 4. Modalità di fruizione
         mode_counts = self.df['Fonte'].value_counts()
-        axes[1,1].bar(mode_counts.index, mode_counts.values, color='orange', alpha=0.8)
-        axes[1,1].set_title('Distribuzione per Modalità di Fruizione')
+        bars4 = axes[1,1].bar(mode_counts.index, mode_counts.values, 
+                             color=PURPLE_PALETTE['warm_gold'], alpha=0.8,
+                             edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[1,1].set_title('Distribuzione per Modalità di Fruizione', color=PURPLE_PALETTE['dark_purple'])
         axes[1,1].set_ylabel('Numero Partecipanti')
-        axes[1,1].tick_params(axis='x', rotation=45)
+        axes[1,1].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[1,1].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'demographic_analysis.png')
+        plt.savefig(self.output_dir / 'demographic_analysis.png', facecolor='white', edgecolor='none')
         plt.close()
     
     def _plot_digital_satisfaction_paradox(self):
-        """Visualizza il Digital Satisfaction Paradox."""
+        """Visualizza il Digital Satisfaction Paradox con tema purple."""
         fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-        fig.suptitle('Digital Satisfaction Paradox', fontsize=16, fontweight='bold')
+        fig.suptitle('Digital Satisfaction Paradox', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
         # Dati per modalità
         webinar_data = self.df[self.df['Fonte'] == 'Webinar']['soddisfazione_num']
@@ -505,11 +539,16 @@ class AccademiaAnalyzer:
         data_to_plot = [cartaceo_data, webinar_data]
         box_plot = axes[0].boxplot(data_to_plot, labels=['Cartaceo', 'Webinar'], 
                                   patch_artist=True)
-        box_plot['boxes'][0].set_facecolor('lightcoral')
-        box_plot['boxes'][1].set_facecolor('lightblue')
-        axes[0].set_title('Distribuzione Soddisfazione per Modalità')
+        box_plot['boxes'][0].set_facecolor(PURPLE_PALETTE['dusty_rose'])
+        box_plot['boxes'][1].set_facecolor(PURPLE_PALETTE['periwinkle'])
+        
+        # Styling boxplot
+        for element in ['whiskers', 'fliers', 'medians', 'caps']:
+            plt.setp(box_plot[element], color=PURPLE_PALETTE['dark_purple'])
+        
+        axes[0].set_title('Distribuzione Soddisfazione per Modalità', color=PURPLE_PALETTE['dark_purple'])
         axes[0].set_ylabel('Punteggio Soddisfazione')
-        axes[0].grid(True, alpha=0.3)
+        axes[0].grid(True, alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # 2. Barplot medie con error bars
         modes = ['Cartaceo', 'Webinar']
@@ -517,26 +556,32 @@ class AccademiaAnalyzer:
         stds = [cartaceo_data.std(), webinar_data.std()]
         
         bars = axes[1].bar(modes, means, yerr=stds, capsize=5, 
-                          color=['lightcoral', 'lightblue'], alpha=0.8)
-        axes[1].set_title('Soddisfazione Media per Modalità')
+                          color=[PURPLE_PALETTE['dusty_rose'], PURPLE_PALETTE['periwinkle']], 
+                          alpha=0.8, edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5,
+                          ecolor=PURPLE_PALETTE['dark_purple'])
+        axes[1].set_title('Soddisfazione Media per Modalità', color=PURPLE_PALETTE['dark_purple'])
         axes[1].set_ylabel('Soddisfazione Media ± SD')
         axes[1].set_ylim(2.0, 3.0)
+        axes[1].grid(True, alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # Annotazioni statistiche
         paradox_data = self.results['key_findings']['digital_paradox']
         axes[1].text(0.5, 2.95, f'Δ = +{paradox_data["difference"]:.3f}\n'
                                f'Cohen\'s d = {paradox_data["cohens_d"]:.3f}\n'
                                f'p = {paradox_data["p_value"]:.3f}',
-                    ha='center', va='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                    ha='center', va='top', 
+                    bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], 
+                             alpha=0.9, edgecolor=PURPLE_PALETTE['primary_purple']),
+                    color=PURPLE_PALETTE['dark_purple'])
         
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'digital_satisfaction_paradox.png')
+        plt.savefig(self.output_dir / 'digital_satisfaction_paradox.png', facecolor='white', edgecolor='none')
         plt.close()
     
     def _plot_generational_membership_gap(self):
-        """Visualizza il Generational Membership Gap."""
+        """Visualizza il Generational Membership Gap con tema purple."""
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        fig.suptitle('Generational Membership Gap Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle('Generational Membership Gap Analysis', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
         gap_data = self.results['key_findings']['generational_gap']['engagement_metrics']
         age_groups = [d['age_group'] for d in gap_data]
@@ -544,87 +589,111 @@ class AccademiaAnalyzer:
         engagement_indices = [d['engagement_index'] for d in gap_data]
         
         # 1. Percentuale soci per età
-        bars1 = axes[0,0].bar(age_groups, membership_rates, color='steelblue', alpha=0.8)
-        axes[0,0].set_title('Percentuale Soci per Fascia d\'Età')
+        bars1 = axes[0,0].bar(age_groups, membership_rates, 
+                             color=PURPLE_PALETTE['royal_purple'], alpha=0.8,
+                             edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[0,0].set_title('Percentuale Soci per Fascia d\'Età', color=PURPLE_PALETTE['dark_purple'])
         axes[0,0].set_ylabel('% Soci')
-        axes[0,0].tick_params(axis='x', rotation=45)
+        axes[0,0].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[0,0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # Annotazione correlazione
         corr = self.results['key_findings']['generational_gap']['age_membership_correlation']
         axes[0,0].text(0.02, 0.98, f'r = {corr:.3f}', transform=axes[0,0].transAxes,
-                      bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                      bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], 
+                               alpha=0.9, edgecolor=PURPLE_PALETTE['primary_purple']),
+                      color=PURPLE_PALETTE['dark_purple'])
         
         # 2. Engagement Index
-        bars2 = axes[0,1].bar(age_groups, engagement_indices, color='darkgreen', alpha=0.8)
-        axes[0,1].set_title('Engagement Index per Fascia d\'Età')
+        bars2 = axes[0,1].bar(age_groups, engagement_indices, 
+                             color=PURPLE_PALETTE['sage'], alpha=0.8,
+                             edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[0,1].set_title('Engagement Index per Fascia d\'Età', color=PURPLE_PALETTE['dark_purple'])
         axes[0,1].set_ylabel('Engagement Index')
-        axes[0,1].tick_params(axis='x', rotation=45)
+        axes[0,1].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[0,1].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # 3. Heatmap distribuzione
         crosstab = pd.crosstab(self.df['eta_std'], self.df['socio_std'], margins=True)
-        sns.heatmap(crosstab.iloc[:-1, :-1], annot=True, fmt='d', cmap='Blues', 
-                   ax=axes[1,0], cbar_kws={'label': 'Numero Partecipanti'})
-        axes[1,0].set_title('Heatmap: Età × Status Socio')
+        # Create purple colormap
+        purple_cmap = sns.color_palette(PURPLE_SEQUENTIAL, as_cmap=True)
+        sns.heatmap(crosstab.iloc[:-1, :-1], annot=True, fmt='d', cmap=purple_cmap, 
+                   ax=axes[1,0], cbar_kws={'label': 'Numero Partecipanti'},
+                   annot_kws={'color': PURPLE_PALETTE['dark_purple']})
+        axes[1,0].set_title('Heatmap: Età × Status Socio', color=PURPLE_PALETTE['dark_purple'])
         axes[1,0].set_xlabel('Status Socio')
         axes[1,0].set_ylabel('Fascia d\'Età')
         
         # 4. Potenziale di conversione
         conversion_potential = [d['conversion_potential'] for d in gap_data]
-        bars4 = axes[1,1].bar(age_groups, conversion_potential, color='orange', alpha=0.8)
-        axes[1,1].set_title('Potenziale di Conversione per Fascia d\'Età')
+        bars4 = axes[1,1].bar(age_groups, conversion_potential, 
+                             color=PURPLE_PALETTE['warm_gold'], alpha=0.8,
+                             edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[1,1].set_title('Potenziale di Conversione per Fascia d\'Età', color=PURPLE_PALETTE['dark_purple'])
         axes[1,1].set_ylabel('Potenziale Conversione')
-        axes[1,1].tick_params(axis='x', rotation=45)
+        axes[1,1].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[1,1].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'generational_membership_gap.png')
+        plt.savefig(self.output_dir / 'generational_membership_gap.png', facecolor='white', edgecolor='none')
         plt.close()
     
     def _plot_satisfaction_distribution(self):
-        """Visualizza la distribuzione della soddisfazione."""
+        """Visualizza la distribuzione della soddisfazione con tema purple."""
         fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-        fig.suptitle('Analisi Distribuzione Soddisfazione', fontsize=16, fontweight='bold')
+        fig.suptitle('Analisi Distribuzione Soddisfazione', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
         # 1. Distribuzione generale
         satisfaction_counts = self.df['soddisfazione_num'].value_counts().sort_index()
-        colors = ['gold' if score == 3 else 'darkviolet' for score in satisfaction_counts.index]
+        colors = [PURPLE_PALETTE['primary_purple'] if score == 2 else PURPLE_PALETTE['warm_gold'] for score in satisfaction_counts.index]
         bars1 = axes[0].bar(satisfaction_counts.index, satisfaction_counts.values, 
-                           color=colors, alpha=0.8)
-        axes[0].set_title('Distribuzione Punteggi di Soddisfazione')
+                           color=colors, alpha=0.8,
+                           edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[0].set_title('Distribuzione Punteggi di Soddisfazione', color=PURPLE_PALETTE['dark_purple'])
         axes[0].set_xlabel('Punteggio Soddisfazione')
         axes[0].set_ylabel('Numero Risposte')
         axes[0].set_xticks([2, 3])
+        axes[0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # Annotazioni statistiche
         mean_sat = self.df['soddisfazione_num'].mean()
         std_sat = self.df['soddisfazione_num'].std()
         axes[0].text(0.02, 0.98, f'M = {mean_sat:.3f}\nSD = {std_sat:.3f}',
                     transform=axes[0].transAxes, va='top',
-                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                    bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], 
+                             alpha=0.9, edgecolor=PURPLE_PALETTE['primary_purple']),
+                    color=PURPLE_PALETTE['dark_purple'])
         
         # 2. Soddisfazione per status socio
         satisfaction_by_member = self.df.groupby(['socio_std', 'soddisfazione_num']).size().unstack(fill_value=0)
-        satisfaction_by_member.plot(kind='bar', ax=axes[1], color=['darkviolet', 'gold'], alpha=0.8)
-        axes[1].set_title('Soddisfazione per Status Socio')
+        satisfaction_by_member.plot(kind='bar', ax=axes[1], 
+                                   color=[PURPLE_PALETTE['primary_purple'], PURPLE_PALETTE['warm_gold']], 
+                                   alpha=0.8, edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[1].set_title('Soddisfazione per Status Socio', color=PURPLE_PALETTE['dark_purple'])
         axes[1].set_xlabel('Status Socio')
         axes[1].set_ylabel('Numero Risposte')
         axes[1].legend(title='Soddisfazione', labels=['Soddisfatto (2)', 'Molto Soddisfatto (3)'])
-        axes[1].tick_params(axis='x', rotation=0)
+        axes[1].tick_params(axis='x', rotation=0, colors=PURPLE_PALETTE['dark_purple'])
+        axes[1].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # 3. Soddisfazione per modalità
         satisfaction_by_mode = self.df.groupby(['Fonte', 'soddisfazione_num']).size().unstack(fill_value=0)
-        satisfaction_by_mode.plot(kind='bar', ax=axes[2], color=['darkviolet', 'gold'], alpha=0.8)
-        axes[2].set_title('Soddisfazione per Modalità di Fruizione')
+        satisfaction_by_mode.plot(kind='bar', ax=axes[2], 
+                                 color=[PURPLE_PALETTE['primary_purple'], PURPLE_PALETTE['warm_gold']], 
+                                 alpha=0.8, edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[2].set_title('Soddisfazione per Modalità di Fruizione', color=PURPLE_PALETTE['dark_purple'])
         axes[2].set_xlabel('Modalità')
         axes[2].set_ylabel('Numero Risposte')
         axes[2].legend(title='Soddisfazione', labels=['Soddisfatto (2)', 'Molto Soddisfatto (3)'])
-        axes[2].tick_params(axis='x', rotation=45)
+        axes[2].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[2].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'satisfaction_distribution.png')
+        plt.savefig(self.output_dir / 'satisfaction_distribution.png', facecolor='white', edgecolor='none')
         plt.close()
     
     def _plot_communication_channels(self):
-        """Analizza l'efficacia dei canali di comunicazione."""
+        """Analizza l'efficacia dei canali di comunicazione con tema purple."""
         # Usa il nome colonna corretto dal CSV
         comm_column = 'Conoscenza' if 'Conoscenza' in self.df.columns else 'canali_clean'
         
@@ -711,21 +780,22 @@ class AccademiaAnalyzer:
         channels = [item[0] for item in top_channels]
         counts = [item[1] for item in top_channels]
         
-        # Visualizzazione migliorata
+        # Visualizzazione migliorata con tema purple
         fig, ax = plt.subplots(figsize=(14, max(8, len(channels) * 0.8)))
         
-        # Colori graduati per evidenziare l'importanza
-        colors = plt.cm.viridis(np.linspace(0.3, 0.9, len(channels)))
+        # Gradient purple colors
+        colors = [PURPLE_SEQUENTIAL[min(i, len(PURPLE_SEQUENTIAL)-1)] for i in range(len(channels))]
         
-        bars = ax.barh(range(len(channels)), counts, color=colors, alpha=0.8)
+        bars = ax.barh(range(len(channels)), counts, color=colors, alpha=0.8,
+                      edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
         
         # Configurazione assi
         ax.set_yticks(range(len(channels)))
-        ax.set_yticklabels(channels, fontsize=11)
-        ax.set_xlabel('Numero di Menzioni', fontsize=12, fontweight='bold')
+        ax.set_yticklabels(channels, fontsize=11, color=PURPLE_PALETTE['dark_purple'])
+        ax.set_xlabel('Numero di Menzioni', fontsize=12, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         ax.set_title('Efficacia Canali di Comunicazione\n(Analisi Scelte Multiple)', 
-                    fontsize=14, fontweight='bold', pad=20)
-        ax.grid(axis='x', alpha=0.3, linestyle='--')
+                    fontsize=14, fontweight='bold', pad=20, color=PURPLE_PALETTE['dark_purple'])
+        ax.grid(axis='x', alpha=0.3, linestyle='--', color=PURPLE_PALETTE['light_purple'])
         
         # Annotazioni valori con percentuali
         total_mentions = sum(counts)
@@ -734,31 +804,33 @@ class AccademiaAnalyzer:
             ax.text(bar.get_width() + max(counts) * 0.01, 
                    bar.get_y() + bar.get_height()/2, 
                    f'{count} ({percentage:.1f}%)', 
-                   va='center', ha='left', fontweight='bold', fontsize=10)
+                   va='center', ha='left', fontweight='bold', fontsize=10,
+                   color=PURPLE_PALETTE['dark_purple'])
         
         # Statistiche sommarie
         stats_text = f'Totale menzioni: {total_mentions}\nCanali unici: {len(channel_counts)}\nRisposte multiple: {len(all_channels) - len(self.df[comm_column].dropna())}'
         ax.text(0.98, 0.02, stats_text, transform=ax.transAxes, 
-               bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.8),
-               va='bottom', ha='right', fontsize=9)
+               bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], alpha=0.9,
+                        edgecolor=PURPLE_PALETTE['primary_purple']),
+               va='bottom', ha='right', fontsize=9, color=PURPLE_PALETTE['dark_purple'])
         
         # Miglioramento layout
         plt.tight_layout()
         
         # Salvataggio con DPI alto per pubblicazione
         plt.savefig(self.output_dir / 'communication_channels.png', 
-                   dpi=300, bbox_inches='tight', facecolor='white')
+                   dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
         plt.close()
         
         # Log delle statistiche
         print(f"   ✓ Analisi canali completata: {len(channel_counts)} canali unici, {total_mentions} menzioni totali")
     
     def _plot_ces_analysis(self):
-        """Visualizza l'analisi del Cultural Engagement Score."""
+        """Visualizza l'analisi del Cultural Engagement Score con tema purple."""
         ces_data = self.results['ces']
         
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        fig.suptitle('Cultural Engagement Score (CES) Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle('Cultural Engagement Score (CES) Analysis', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
         # 1. Componenti del CES
         components = ces_data['components']
@@ -767,39 +839,48 @@ class AccademiaAnalyzer:
         comp_values = [components['satisfaction'], components['membership'], 
                       components['digital_adoption']]
         
+        colors_comp = [PURPLE_PALETTE['warm_gold'], PURPLE_PALETTE['royal_purple'], PURPLE_PALETTE['sage']]
         bars1 = axes[0,0].bar(comp_names, comp_values, 
-                             color=['gold', 'steelblue', 'darkgreen'], alpha=0.8)
-        axes[0,0].set_title('Componenti del Cultural Engagement Score')
+                             color=colors_comp, alpha=0.8,
+                             edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[0,0].set_title('Componenti del Cultural Engagement Score', color=PURPLE_PALETTE['dark_purple'])
         axes[0,0].set_ylabel('Valore Componente')
         axes[0,0].set_ylim(0, 1.0)
+        axes[0,0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # Annotazioni valori
         for bar, value in zip(bars1, comp_values):
             axes[0,0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
-                          f'{value:.3f}', ha='center', va='bottom', fontweight='bold')
+                          f'{value:.3f}', ha='center', va='bottom', fontweight='bold',
+                          color=PURPLE_PALETTE['dark_purple'])
         
-        # 2. CES Score finale
+        # 2. CES Score finale (Gauge plot migliorato)
         current_ces = ces_data['score']
         max_ces = ces_data['components']['max_theoretical']
         
-        # Gauge plot
+        # Gauge plot con tema purple
         theta = np.linspace(0, np.pi, 100)
         r = 1
         
-        axes[0,1].plot(r * np.cos(theta), r * np.sin(theta), 'k-', linewidth=2)
-        axes[0,1].fill_between(r * np.cos(theta), 0, r * np.sin(theta), alpha=0.3, color='lightgray')
+        axes[0,1].plot(r * np.cos(theta), r * np.sin(theta), color=PURPLE_PALETTE['dark_purple'], linewidth=3)
+        axes[0,1].fill_between(r * np.cos(theta), 0, r * np.sin(theta), alpha=0.2, color=PURPLE_PALETTE['lavender'])
         
         # Posizione attuale
         current_angle = (current_ces / max_ces) * np.pi
         axes[0,1].plot([0, r * np.cos(current_angle)], [0, r * np.sin(current_angle)], 
-                      'r-', linewidth=4, label=f'CES Attuale: {current_ces:.3f}')
+                      color=PURPLE_PALETTE['primary_purple'], linewidth=6, 
+                      label=f'CES Attuale: {current_ces:.3f}')
+        
+        # Punto sul gauge
+        axes[0,1].scatter(r * np.cos(current_angle), r * np.sin(current_angle), 
+                         color=PURPLE_PALETTE['warm_gold'], s=100, zorder=5, edgecolor=PURPLE_PALETTE['dark_purple'])
         
         axes[0,1].set_xlim(-1.2, 1.2)
         axes[0,1].set_ylim(-0.2, 1.2)
         axes[0,1].set_aspect('equal')
-        axes[0,1].set_title(f'CES Score: {current_ces:.3f}/{max_ces:.1f}')
+        axes[0,1].set_title(f'CES Score: {current_ces:.3f}/{max_ces:.1f}', color=PURPLE_PALETTE['dark_purple'])
         axes[0,1].text(0, -0.1, f'Percentile: {ces_data["percentile_rank"]:.1f}%', 
-                      ha='center', fontsize=12, fontweight='bold')
+                      ha='center', fontsize=12, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         axes[0,1].axis('off')
         
         # 3. Scenari di miglioramento
@@ -808,23 +889,25 @@ class AccademiaAnalyzer:
         projected_ces = [scenarios[s]['projected_ces'] for s in scenario_names]
         improvements = [scenarios[s]['improvement_percentage'] for s in scenario_names]
         
+        colors_scenarios = [PURPLE_PALETTE['periwinkle'], PURPLE_PALETTE['warm_gold'], PURPLE_PALETTE['dusty_rose']]
         bars3 = axes[1,0].bar(scenario_names, projected_ces, alpha=0.8,
-                             color=['lightblue', 'orange', 'red'])
+                             color=colors_scenarios, edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
         
         # Linea baseline
-        axes[1,0].axhline(y=current_ces, color='black', linestyle='--', 
-                         label=f'Baseline: {current_ces:.3f}')
+        axes[1,0].axhline(y=current_ces, color=PURPLE_PALETTE['dark_purple'], linestyle='--', 
+                         linewidth=2, label=f'Baseline: {current_ces:.3f}')
         
-        axes[1,0].set_title('Scenari di Miglioramento CES')
+        axes[1,0].set_title('Scenari di Miglioramento CES', color=PURPLE_PALETTE['dark_purple'])
         axes[1,0].set_ylabel('CES Proiettato')
         axes[1,0].legend()
-        axes[1,0].tick_params(axis='x', rotation=45)
+        axes[1,0].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[1,0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # Annotazioni miglioramenti
         for bar, improvement in zip(bars3, improvements):
             axes[1,0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
                           f'+{improvement:.1f}%', ha='center', va='bottom', 
-                          fontweight='bold', color='green')
+                          fontweight='bold', color=PURPLE_PALETTE['sage'])
         
         # 4. Bootstrap validation
         bootstrap_data = ces_data['bootstrap_validation']
@@ -832,23 +915,26 @@ class AccademiaAnalyzer:
         # Istogramma distribuzione bootstrap
         bootstrap_scores = np.random.normal(bootstrap_data['mean'], 
                                           bootstrap_data['std_error'], 1000)
-        axes[1,1].hist(bootstrap_scores, bins=30, alpha=0.7, color='skyblue', 
-                      density=True, label='Bootstrap Distribution')
+        axes[1,1].hist(bootstrap_scores, bins=30, alpha=0.7, color=PURPLE_PALETTE['periwinkle'], 
+                      density=True, label='Bootstrap Distribution',
+                      edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1)
         
         # Intervallo di confidenza
-        axes[1,1].axvline(bootstrap_data['ci_95_lower'], color='red', linestyle='--', 
-                         label='CI 95%')
-        axes[1,1].axvline(bootstrap_data['ci_95_upper'], color='red', linestyle='--')
-        axes[1,1].axvline(bootstrap_data['mean'], color='black', linestyle='-', 
-                         linewidth=2, label='Media Bootstrap')
+        axes[1,1].axvline(bootstrap_data['ci_95_lower'], color=PURPLE_PALETTE['dusty_rose'], 
+                         linestyle='--', linewidth=2, label='CI 95%')
+        axes[1,1].axvline(bootstrap_data['ci_95_upper'], color=PURPLE_PALETTE['dusty_rose'], 
+                         linestyle='--', linewidth=2)
+        axes[1,1].axvline(bootstrap_data['mean'], color=PURPLE_PALETTE['dark_purple'], 
+                         linestyle='-', linewidth=3, label='Media Bootstrap')
         
-        axes[1,1].set_title('Validazione Bootstrap CES')
+        axes[1,1].set_title('Validazione Bootstrap CES', color=PURPLE_PALETTE['dark_purple'])
         axes[1,1].set_xlabel('CES Score')
         axes[1,1].set_ylabel('Densità')
         axes[1,1].legend()
+        axes[1,1].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         plt.tight_layout()
-        plt.savefig(self.output_dir / 'ces_analysis.png')
+        plt.savefig(self.output_dir / 'ces_analysis.png', facecolor='white', edgecolor='none')
         plt.close()
     
     def generate_summary_report(self):
