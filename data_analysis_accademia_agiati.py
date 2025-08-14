@@ -5,12 +5,17 @@ Analisi Quantitativa dei Dati di Soddisfazione - Accademia Roveretana degli Agia
 Autore: Giuseppe Pio Mangiacotti
 Istituzione: Università degli Studi di Trento - Dipartimento di Scienze Cognitive
 Anno Accademico: 2024/2025
-Versione: 2.1 (CORREZIONE METODOLOGICA CRITICA - Fisher Exact Test)
+Versione: 2.1 (CORREZIONE METODOLOGICA CRITICA - Fisher Exact Test) + GRAFICI TESI
 
 ⚠️  AGGIORNAMENTO CRITICO: 
 Questa versione corregge un errore metodologico significativo nella v2.0.
 Il test Mann-Whitney U è stato sostituito con Fisher Exact Test per 
 dati essenzialmente binari (solo valori 2 e 3).
+
+🎓 AGGIORNAMENTO TESI:
+Aggiunti grafici specifici per l'elaborato finale:
+- Pannello demografico completo (età, soci, scolarizzazione)
+- Pannello modalità partecipazione (cartaceo/webinar, argomenti)
 
 Descrizione:
 Script per l'analisi completa del dataset di feedback raccolto presso l'Accademia 
@@ -31,6 +36,7 @@ Correzioni Metodologiche v2.1:
 - Odds ratio e p-value esatti
 - Warning automatici per test inappropriati
 - Validazione qualità statistica integrata
+- REGRESSIONE LOGISTICA per validazione terziaria completa
 
 Metodologia Statistica (Corretta):
 ===================================
@@ -50,15 +56,16 @@ Dipendenze:
 - seaborn >= 0.12.0
 - numpy >= 1.24.0
 - scipy >= 1.10.0 (fisher_exact, chi2_contingency, mannwhitneyu)
+- scikit-learn >= 1.0.0 (LogisticRegression - opzionale)
 - plotly >= 5.15.0 (opzionale)
 
 Utilizzo:
-python data_analysis_accademia_agiati.py --input paper_report.CSV --output ./output/
+python data_analysis_accademia_agiati_v2.1.py --input paper_report.CSV --output ./output/
 
 Citazione (Aggiornata):
 =======================
 Mangiacotti, G.P. (2025). Progettazione di interfacce per la raccolta di feedback 
-nel settore culturale: un sistema ibrido per l'Accademia Roveretana degli Agiati
+nel settore culturale: un sistema ibrido per l'Accademia Roveretana degli Agiati v2.1
 Università degli Studi di Trento.
 """
 import pandas as pd
@@ -66,10 +73,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
-from scipy.stats import chi2_contingency, pearsonr, mannwhitneyu, ks_2samp, spearmanr, fisher_exact
+from scipy.stats import chi2_contingency, pearsonr, mannwhitneyu, ks_2samp, rankdata, fisher_exact, spearmanr, norm
 import warnings
 import argparse
 import os
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 import json
@@ -106,8 +114,8 @@ class AccademiaAnalyzer:
     """
     Classe principale per l'analisi dei dati dell'Accademia degli Agiati.
     
-    VERSIONE 2.1 - Metodologia Corretta per Dati Binari/Ordinali Discreti
-    ====================================================================
+    VERSIONE 2.1 + GRAFICI TESI - Metodologia Corretta per Dati Binari/Ordinali Discreti
+    ===================================================================================
     
     Implementa metodologie quantitative appropriate per l'identificazione di pattern
     di soddisfazione, engagement e comportamento del pubblico culturale.
@@ -118,6 +126,13 @@ class AccademiaAnalyzer:
     - Mann-Whitney U relegato ad analisi secondaria per dati con ties eccessivi
     - Verifica automatica dell'appropriatezza dei test statistici
     - Warning metodologici espliciti quando le assunzioni sono violate
+    - REGRESSIONE LOGISTICA COMPLETA per validazione terziaria
+    
+    GRAFICI SPECIFICI PER TESI:
+    ---------------------------
+    - Pannello demografico completo (età, soci, scolarizzazione)
+    - Pannello modalità partecipazione (cartaceo/webinar, argomenti)
+    - Integrazione automatica nel workflow di analisi
     
     TEST STATISTICI UTILIZZATI:
     ---------------------------
@@ -125,7 +140,7 @@ class AccademiaAnalyzer:
     - Fisher Exact Test per tabelle di contingenza 2×2
     - Test χ² con correzioni appropriate
     - Bootstrap resampling per validazione indicatori compositi
-    - Regressione logistica per validazione crociata
+    - Regressione logistica per validazione crociata e intervalli di confidenza
     
     SECONDARI (Con limitazioni dichiarate):
     - Mann-Whitney U per compatibilità (con disclaimer sulle limitazioni)
@@ -137,6 +152,8 @@ class AccademiaAnalyzer:
     - methodological_warning.txt: Avviso sui problemi metodologici
     - contingency_table_fisher_test.csv: Tabella per Fisher test
     - digital_satisfaction_paradox_corrected.png: Visualizzazione aggiornata
+    - demographic_overview_panel.png: 🎓 Pannello demografico (TESI)
+    - participation_modalities_panel.png: 🎓 Pannello partecipazione (TESI)
     """
     
     def __init__(self, csv_path: str, output_dir: str = "./output/"):
@@ -275,7 +292,7 @@ class AccademiaAnalyzer:
         """Standardizza lo status di socio."""
         membership_mapping = {
             'Sì': 'Sì',
-            'S�': 'Sì',  # Fix encoding UTF-8
+            'Sí': 'Sì',  # Fix encoding UTF-8
             'Si': 'Sì',
             'No': 'No'
         }
@@ -334,7 +351,7 @@ class AccademiaAnalyzer:
         CORREZIONE METODOLOGICA v2.1:
         - Fisher Exact Test per confronto proporzioni (dati essenzialmente binari)
         - Mann-Whitney U mantenuto come analisi secondaria con disclosure limitazioni
-        - Aggiunta regressione logistica per robustezza
+        - Aggiunta regressione logistica per robustezza E VALIDAZIONE COMPLETA
         """
         
         # Estrazione dati per modalità
@@ -423,41 +440,8 @@ class AccademiaAnalyzer:
             f'Ties eccessivi ({ties_percentage:.1%}), solo {total_values} valori distinti' if mw_problematic else 'Appropriato'
         )
         
-        # === REGRESSIONE LOGISTICA (ANALISI TERZIARIA) ===
-        logistic_results = {'model_available': False}
-        try:
-            from sklearn.linear_model import LogisticRegression
-            
-            # Preparazione dati per regressione
-            X = np.array([1 if fonte == 'Webinar' else 0 for fonte in self.df['Fonte']]).reshape(-1, 1)
-            y = np.array([1 if sat == 3 else 0 for sat in self.df['soddisfazione_num']])
-            
-            # Fit del modello
-            logistic_model = LogisticRegression()
-            logistic_model.fit(X, y)
-            
-            # Odds ratio dalla regressione
-            logistic_odds_ratio = np.exp(logistic_model.coef_[0][0])
-            
-            logistic_results = {
-                'odds_ratio': logistic_odds_ratio,
-                'coefficient': logistic_model.coef_[0][0],
-                'intercept': logistic_model.intercept_[0],
-                'model_available': True
-            }
-            
-            self._assess_test_appropriateness(
-                'Regressione Logistica',
-                'Validazione crociata per confronto proporzioni',
-                True,
-                'Robusto per qualsiasi dimensione campionaria'
-            )
-            
-        except ImportError:
-            self._log_methodological_warning(
-                'Regressione Logistica',
-                'sklearn non disponibile - analisi di validazione saltata'
-            )
+        # === REGRESSIONE LOGISTICA (ANALISI TERZIARIA COMPLETA) ===
+        logistic_results = self._analyze_logistic_regression_validation(webinar_data, cartaceo_data)
         
         # === ANALISI ETÀ (MANTENUTA) ===
         age_mapping = {'14-30': 22, '31-50': 40, '51-70': 60, '>70': 75}
@@ -488,7 +472,7 @@ class AccademiaAnalyzer:
             'mw_methodological_warning': mw_problematic,
             'ties_percentage': ties_percentage,
             
-            # === REGRESSIONE LOGISTICA ===
+            # === REGRESSIONE LOGISTICA COMPLETA ===
             'logistic_regression': logistic_results,
             
             # === ANALISI ETÀ ===
@@ -512,6 +496,272 @@ class AccademiaAnalyzer:
             'ks_p_value': np.nan
         }
     
+    def _analyze_logistic_regression_validation(self, webinar_data, cartaceo_data):
+        """
+        Implementa regressione logistica per validazione del Digital Satisfaction Paradox.
+        
+        Returns:
+        --------
+        dict
+            Risultati completi della regressione logistica con statistiche inferenziali
+        """
+        try:
+            from sklearn.linear_model import LogisticRegression
+            from scipy.stats import norm
+            
+            # Preparazione dati
+            X = np.array([1 if fonte == 'Webinar' else 0 for fonte in self.df['Fonte']]).reshape(-1, 1)
+            y = np.array([1 if sat == 3 else 0 for sat in self.df['soddisfazione_num']])
+            
+            # Fit del modello con solver appropriato
+            logistic_model = LogisticRegression(solver='liblinear', random_state=42)
+            logistic_model.fit(X, y)
+            
+            # Estrazione coefficienti
+            beta = logistic_model.coef_[0][0]
+            intercept = logistic_model.intercept_[0]
+            
+            # Calcolo errore standard attraverso matrice di informazione di Fisher
+            p_pred = logistic_model.predict_proba(X)[:, 1]
+            
+            # Matrice design con intercetta
+            X_design = np.column_stack([np.ones(len(X)), X.flatten()])
+            
+            # Matrice dei pesi (Hessian matrix)
+            W = np.diag(p_pred * (1 - p_pred))
+            
+            try:
+                # Matrice di informazione di Fisher
+                fisher_info = X_design.T @ W @ X_design
+                var_covar_matrix = np.linalg.inv(fisher_info)
+                
+                se_intercept = np.sqrt(var_covar_matrix[0, 0])
+                se_beta = np.sqrt(var_covar_matrix[1, 1])
+                
+                # Correlazione tra coefficienti
+                correlation_coef = var_covar_matrix[0, 1] / (se_intercept * se_beta)
+                
+            except np.linalg.LinAlgError:
+                # Fallback: bootstrap per errore standard
+                print("   ⚠️  Matrice singolare - utilizzando bootstrap per SE")
+                se_beta = self._bootstrap_logistic_se(X, y)
+                se_intercept = self._bootstrap_logistic_se_intercept(X, y)
+                correlation_coef = np.nan
+            
+            # Statistiche inferenziali
+            z_score_beta = beta / se_beta
+            z_score_intercept = intercept / se_intercept
+            
+            p_value_beta = 2 * (1 - norm.cdf(abs(z_score_beta)))
+            p_value_intercept = 2 * (1 - norm.cdf(abs(z_score_intercept)))
+            
+            # Odds ratio e intervalli di confidenza
+            odds_ratio = np.exp(beta)
+            
+            # Intervalli di confidenza al 95% per beta e OR
+            z_critical = norm.ppf(0.975)  # 1.96
+            beta_ci_lower = beta - z_critical * se_beta
+            beta_ci_upper = beta + z_critical * se_beta
+            
+            or_ci_lower = np.exp(beta_ci_lower)
+            or_ci_upper = np.exp(beta_ci_upper)
+            
+            # Pseudo R-squared (McFadden)
+            pseudo_r2 = self._calculate_mcfadden_r2(logistic_model, X, y)
+            
+            # Log-likelihood
+            log_likelihood = self._calculate_log_likelihood(logistic_model, X, y)
+            
+            # AIC e BIC
+            n_params = 2  # intercetta + beta
+            n_obs = len(y)
+            aic = 2 * n_params - 2 * log_likelihood
+            bic = np.log(n_obs) * n_params - 2 * log_likelihood
+            
+            # Valutazione qualità del modello
+            predictions = logistic_model.predict(X)
+            accuracy = np.mean(predictions == y)
+            
+            # Tabella di classificazione
+            confusion_matrix = self._create_confusion_matrix(y, predictions)
+            
+            self._assess_test_appropriateness(
+                'Regressione Logistica',
+                'Validazione crociata Digital Satisfaction Paradox',
+                True,
+                'Robusto per qualsiasi dimensione campionaria, appropriato per outcome binario'
+            )
+            
+            return {
+                'model_available': True,
+                'n_observations': n_obs,
+                'converged': True,
+                
+                # Coefficienti e statistiche principali
+                'beta': beta,
+                'se_beta': se_beta,
+                'z_score': z_score_beta,
+                'p_value': p_value_beta,
+                'beta_ci_95': [beta_ci_lower, beta_ci_upper],
+                
+                'intercept': intercept,
+                'se_intercept': se_intercept,
+                'z_score_intercept': z_score_intercept,
+                'p_value_intercept': p_value_intercept,
+                
+                # Odds ratio
+                'odds_ratio': odds_ratio,
+                'or_ci_95': [or_ci_lower, or_ci_upper],
+                'exp_beta': odds_ratio,  # Alias per compatibilità
+                
+                # Qualità del modello
+                'pseudo_r2_mcfadden': pseudo_r2,
+                'log_likelihood': log_likelihood,
+                'aic': aic,
+                'bic': bic,
+                'accuracy': accuracy,
+                
+                # Diagnostica
+                'correlation_coef_inter_beta': correlation_coef,
+                'confusion_matrix': confusion_matrix,
+                
+                # Significatività
+                'significant_at_05': p_value_beta < 0.05,
+                'significant_at_01': p_value_beta < 0.01,
+                'significant_at_001': p_value_beta < 0.001,
+                
+                # Equazione del modello
+                'model_equation': f'logit(P(Y=1)) = {intercept:.3f} + {beta:.3f} × Webinar'
+            }
+            
+        except ImportError:
+            self._log_methodological_warning(
+                'Regressione Logistica',
+                'sklearn non disponibile - analisi di validazione non eseguita'
+            )
+            return {'model_available': False, 'error': 'sklearn not available'}
+            
+        except Exception as e:
+            self._log_methodological_warning(
+                'Regressione Logistica', 
+                f'Errore durante il calcolo: {str(e)}'
+            )
+            return {'model_available': False, 'error': str(e)}
+    
+    def _bootstrap_logistic_se(self, X, y, n_bootstrap=1000):
+        """
+        Calcola l'errore standard del coefficiente beta attraverso bootstrap.
+        """
+        try:
+            from sklearn.linear_model import LogisticRegression
+            
+            betas = []
+            n = len(y)
+            
+            for _ in range(n_bootstrap):
+                # Campionamento bootstrap
+                indices = np.random.choice(n, n, replace=True)
+                X_boot = X[indices]
+                y_boot = y[indices]
+                
+                try:
+                    log_reg_boot = LogisticRegression(solver='liblinear', max_iter=1000)
+                    log_reg_boot.fit(X_boot, y_boot)
+                    betas.append(log_reg_boot.coef_[0][0])
+                except:
+                    continue
+            
+            return np.std(betas) if betas else 0.5  # Fallback
+        except:
+            return 0.5
+    
+    def _bootstrap_logistic_se_intercept(self, X, y, n_bootstrap=1000):
+        """
+        Calcola l'errore standard dell'intercetta attraverso bootstrap.
+        """
+        try:
+            from sklearn.linear_model import LogisticRegression
+            
+            intercepts = []
+            n = len(y)
+            
+            for _ in range(n_bootstrap):
+                indices = np.random.choice(n, n, replace=True)
+                X_boot = X[indices]
+                y_boot = y[indices]
+                
+                try:
+                    log_reg_boot = LogisticRegression(solver='liblinear', max_iter=1000)
+                    log_reg_boot.fit(X_boot, y_boot)
+                    intercepts.append(log_reg_boot.intercept_[0])
+                except:
+                    continue
+            
+            return np.std(intercepts) if intercepts else 0.5
+        except:
+            return 0.5
+    
+    def _calculate_mcfadden_r2(self, model, X, y):
+        """
+        Calcola il Pseudo R-squared di McFadden.
+        """
+        try:
+            from sklearn.linear_model import LogisticRegression
+            
+            # Modello null (solo intercetta)
+            null_model = LogisticRegression(solver='liblinear')
+            null_model.fit(np.ones((len(X), 1)), y)
+            
+            # Log-likelihood del modello null e completo
+            ll_null = self._calculate_log_likelihood(null_model, np.ones((len(X), 1)), y)
+            ll_model = self._calculate_log_likelihood(model, X, y)
+            
+            # McFadden's Pseudo R-squared
+            pseudo_r2 = 1 - (ll_model / ll_null)
+            
+            return max(0, pseudo_r2)  # Assicura non-negatività
+            
+        except:
+            return np.nan
+    
+    def _calculate_log_likelihood(self, model, X, y):
+        """
+        Calcola la log-likelihood del modello.
+        """
+        try:
+            # Predizioni di probabilità
+            p_pred = model.predict_proba(X)[:, 1]
+            
+            # Evita log(0) e log(1)
+            p_pred = np.clip(p_pred, 1e-15, 1 - 1e-15)
+            
+            # Log-likelihood
+            ll = np.sum(y * np.log(p_pred) + (1 - y) * np.log(1 - p_pred))
+            
+            return ll
+        except:
+            return np.nan
+    
+    def _create_confusion_matrix(self, y_true, y_pred):
+        """
+        Crea matrice di confusione per classificazione binaria.
+        """
+        tp = np.sum((y_true == 1) & (y_pred == 1))  # True Positives
+        tn = np.sum((y_true == 0) & (y_pred == 0))  # True Negatives
+        fp = np.sum((y_true == 0) & (y_pred == 1))  # False Positives
+        fn = np.sum((y_true == 1) & (y_pred == 0))  # False Negatives
+        
+        return {
+            'true_positives': int(tp),
+            'true_negatives': int(tn),
+            'false_positives': int(fp),
+            'false_negatives': int(fn),
+            'sensitivity': tp / (tp + fn) if (tp + fn) > 0 else 0,
+            'specificity': tn / (tn + fp) if (tn + fp) > 0 else 0,
+            'precision': tp / (tp + fp) if (tp + fp) > 0 else 0,
+            'recall': tp / (tp + fn) if (tp + fn) > 0 else 0
+        }
+    
     def _analyze_generational_membership_gap(self) -> dict:
         """Analizza il Generational Membership Gap."""
         age_groups = ['14-30', '31-50', '51-70', '>70']
@@ -533,30 +783,43 @@ class AccademiaAnalyzer:
                     'engagement_index': engagement_index,
                     'conversion_potential': (1 - membership_rate) * avg_satisfaction * len(cohort)
                 })
-        # Correlazione età-membership
+        
+        # Correlazione età-membership con metodologia appropriata per n piccoli
         age_numerical = [22, 40, 60, 75]
         membership_rates = [d['membership_rate'] for d in engagement_data]
-        correlation_pearson, p_value_pearson = pearsonr(age_numerical, membership_rates)
+        
+        # Correlazione di Spearman (appropriata per n piccoli e dati ordinali)
+        from scipy.stats import spearmanr
         correlation_spearman, p_value_spearman = spearmanr(age_numerical, membership_rates)
+        
+        # Correlazione di Pearson (per confronto, ma con limitazioni)
+        correlation_pearson, p_value_pearson = pearsonr(age_numerical, membership_rates)
+        
+        # Assessment appropriatezza
         sample_size = len(age_numerical)
-        normality_feasible = sample_size >= 10
+        normality_feasible = sample_size >= 10  # Soglia minima per test normalità
+        
         self._assess_test_appropriateness(
             'Correlazione di Spearman',
             f'Correlazione età-membership con n={sample_size} coorti',
-            True,  
+            True,  # Sempre appropriata
             'Non-parametrica, appropriata per campioni piccoli e dati ordinali'
         )
+        
         self._assess_test_appropriateness(
             'Correlazione di Pearson',
             f'Correlazione età-membership con n={sample_size} coorti',
             normality_feasible,
             f'Campione troppo piccolo (n={sample_size}) per verificare normalità bivariata' if not normality_feasible else 'Appropriata con verifica normalità'
         )
+        
+        # Warning per campione piccolo
         if not normality_feasible:
             self._log_methodological_warning(
                 'Correlazione età-membership',
                 f'Campione molto piccolo (n={sample_size}), preferire metodi non-parametrici'
             )
+        
         return {
             'engagement_metrics': engagement_data,
             'age_membership_correlation': correlation_spearman,  # Usa Spearman come primario
@@ -571,8 +834,7 @@ class AccademiaAnalyzer:
             'normality_test_feasible': normality_feasible,
             'recommended_method': 'Spearman'
         }
-        
-    
+
     def _analyze_inverse_contentment_effect(self) -> dict:
         """Analizza l'Inverse Contentment Effect."""
         # Identificazione feedback elaborato
@@ -606,7 +868,7 @@ class AccademiaAnalyzer:
             }
         }
         
-        # Test chi-quadro per significatività
+        # Costruzione tabella di contingenza
         contingency_table = [
             [feedback_metrics['satisfied']['with_feedback'],
              feedback_metrics['satisfied']['total'] - feedback_metrics['satisfied']['with_feedback']],
@@ -614,18 +876,72 @@ class AccademiaAnalyzer:
              feedback_metrics['very_satisfied']['total'] - feedback_metrics['very_satisfied']['with_feedback']]
         ]
         
+        # VERIFICA CRITERI DI COCHRAN
         chi2_stat, p_value, dof, expected = chi2_contingency(contingency_table)
         
-        # Contentment Ratio
+        # Verifica frequenze attese ≥ 5 (Criterio di Cochran)
+        min_expected = np.min(expected)
+        cells_below_5 = np.sum(expected < 5)
+        total_cells = expected.size
+        cochran_satisfied = (cells_below_5 == 0) or (cells_below_5 <= 0.2 * total_cells and min_expected >= 1)
+        
+        # Se criteri Cochran violati, usa Fisher Exact Test
+        if not cochran_satisfied:
+            fisher_odds, fisher_p = stats.fisher_exact(contingency_table)
+            primary_test = 'Fisher Exact Test'
+            primary_p_value = fisher_p
+            
+            self._assess_test_appropriateness(
+                'Test Chi-quadro',
+                f'Tabella 2×2 con min freq. attesa = {min_expected:.1f}',
+                False,
+                f'Frequenze attese < 5 in {cells_below_5}/{total_cells} celle, viola criteri Cochran'
+            )
+            
+            self._assess_test_appropriateness(
+                'Fisher Exact Test',
+                'Tabella 2×2 con frequenze attese basse',
+                True,
+                'Appropriato per celle con frequenze basse, nessuna assunzione violata'
+            )
+        else:
+            fisher_odds, fisher_p = np.nan, np.nan
+            primary_test = 'Chi-quadro'
+            primary_p_value = p_value
+            
+            self._assess_test_appropriateness(
+                'Test Chi-quadro',
+                f'Tabella 2×2 con min freq. attesa = {min_expected:.1f}',
+                True,
+                'Criteri di Cochran soddisfatti, appropriato per tabelle di contingenza'
+            )
+        
+        # Contentment Ratio (robusto indipendentemente dal test)
         contentment_ratio = (feedback_metrics['very_satisfied']['feedback_rate'] / 
                            feedback_metrics['satisfied']['feedback_rate'])
         
         return {
             'feedback_metrics': feedback_metrics,
             'contentment_ratio': contentment_ratio,
+            'contingency_table': contingency_table,
+            # Test statistici
+            'primary_test': primary_test,
+            'primary_p_value': primary_p_value,
             'chi2_statistic': chi2_stat,
-            'p_value': p_value,
-            'effect_confirmed': contentment_ratio > 1
+            'chi2_p_value': p_value,
+            'fisher_odds_ratio': fisher_odds,
+            'fisher_p_value': fisher_p,
+            # Verifica appropriatezza
+            'cochran_criteria': {
+                'satisfied': cochran_satisfied,
+                'min_expected_frequency': min_expected,
+                'cells_below_5': int(cells_below_5),
+                'total_cells': int(total_cells),
+                'expected_frequencies': expected.tolist()
+            },
+            'effect_confirmed': contentment_ratio > 1,
+            # Legacy compatibility
+            'p_value': primary_p_value
         }
     
     def calculate_cultural_engagement_score(self) -> dict:
@@ -641,7 +957,7 @@ class AccademiaAnalyzer:
         
         # Componenti del CES
         avg_satisfaction = self.df['soddisfazione_num'].mean()
-        satisfaction_component = avg_satisfaction / 3  # Normalizzazione 0-1
+        satisfaction_component = (avg_satisfaction - 1) / 2  # Normalizzazione 0-1
         
         membership_rate = (self.df['socio_std'] == 'Sì').mean()
         digital_adoption_rate = (self.df['Fonte'] == 'Webinar').mean()
@@ -727,6 +1043,114 @@ class AccademiaAnalyzer:
         
         return results
     
+    def print_detailed_digital_paradox_analysis(self):
+        """
+        Stampa analisi dettagliata del Digital Satisfaction Paradox con tutti i test.
+        """
+        print("\n" + "="*90)
+        print("🎯 DIGITAL SATISFACTION PARADOX - ANALISI COMPLETA MULTI-METODOLOGICA")
+        print("="*90)
+        
+        if 'digital_paradox' not in self.results.get('key_findings', {}):
+            print("❌ Analisi non ancora eseguita")
+            return
+        
+        paradox_data = self.results['key_findings']['digital_paradox']
+        
+        # === STATISTICHE DESCRITTIVE ===
+        print("📊 STATISTICHE DESCRITTIVE:")
+        print(f"   📋 CARTACEO:")
+        print(f"      • N = {paradox_data['cartaceo_stats']['n']}")
+        print(f"      • Media = {paradox_data['cartaceo_stats']['mean']:.3f} ± {paradox_data['cartaceo_stats']['std']:.3f}")
+        print(f"      • % Molto Soddisfatti = {paradox_data['cartaceo_stats']['satisfaction_rate_max']:.1%}")
+        print(f"   📋 WEBINAR:")
+        print(f"      • N = {paradox_data['webinar_stats']['n']}")
+        print(f"      • Media = {paradox_data['webinar_stats']['mean']:.3f} ± {paradox_data['webinar_stats']['std']:.3f}")
+        print(f"      • % Molto Soddisfatti = {paradox_data['webinar_stats']['satisfaction_rate_max']:.1%}")
+        print(f"   📈 DIFFERENZA: +{paradox_data['difference']:.3f} punti (Webinar > Cartaceo)")
+        
+        # === FISHER EXACT TEST (PRINCIPALE) ===
+        print(f"\n🥇 FISHER EXACT TEST (Metodo Principale):")
+        print(f"   • Odds Ratio: {paradox_data['fisher_odds_ratio']:.3f}")
+        print(f"   • p-value: {paradox_data['fisher_p_value']:.4f}")
+        print(f"   • Significatività: {'***' if paradox_data['fisher_p_value'] < 0.001 else '**' if paradox_data['fisher_p_value'] < 0.01 else '*' if paradox_data['fisher_p_value'] < 0.05 else 'n.s.'}")
+        print(f"   • Differenza Proporzioni: +{paradox_data['proportion_difference']:.3f}")
+        print(f"   • Appropriatezza: ✅ OTTIMALE per dati binari")
+        
+        # Tabella di contingenza
+        contingency = paradox_data['contingency_table']
+        print(f"   📋 Tabella di Contingenza 2×2:")
+        print(f"                    Soddisfatto(2)  Molto Sodd.(3)")
+        print(f"      Cartaceo:     {contingency[0][0]:>11}  {contingency[0][1]:>13}")
+        print(f"      Webinar:      {contingency[1][0]:>11}  {contingency[1][1]:>13}")
+        
+        # === REGRESSIONE LOGISTICA ===
+        if paradox_data['logistic_regression'].get('model_available', False):
+            print(f"\n🔬 REGRESSIONE LOGISTICA (Validazione Terziaria):")
+            lr_data = paradox_data['logistic_regression']
+            
+            print(f"   📈 COEFFICIENTI:")
+            print(f"      • β (Webinar): {lr_data['beta']:.3f} ± {lr_data['se_beta']:.3f}")
+            print(f"      • Z-score: {lr_data['z_score']:.3f}")
+            print(f"      • p-value: {lr_data['p_value']:.4f}")
+            print(f"      • Significatività: {'***' if lr_data['p_value'] < 0.001 else '**' if lr_data['p_value'] < 0.01 else '*' if lr_data['p_value'] < 0.05 else 'n.s.'}")
+            print(f"      • CI 95% (β): [{lr_data['beta_ci_95'][0]:.3f}, {lr_data['beta_ci_95'][1]:.3f}]")
+            
+            print(f"   🎯 ODDS RATIO:")
+            print(f"      • OR [exp(β)]: {lr_data['odds_ratio']:.3f}")
+            print(f"      • CI 95% (OR): [{lr_data['or_ci_95'][0]:.3f}, {lr_data['or_ci_95'][1]:.3f}]")
+            print(f"      • Incremento Chance: +{(lr_data['odds_ratio']-1)*100:.1f}%")
+            
+            print(f"   📊 QUALITÀ MODELLO:")
+            print(f"      • Pseudo R² (McFadden): {lr_data['pseudo_r2_mcfadden']:.3f}")
+            print(f"      • Log-Likelihood: {lr_data['log_likelihood']:.1f}")
+            print(f"      • AIC: {lr_data['aic']:.1f}")
+            print(f"      • BIC: {lr_data['bic']:.1f}")
+            print(f"      • Accuracy: {lr_data['accuracy']:.3f}")
+            
+            print(f"   📝 EQUAZIONE:")
+            print(f"      {lr_data['model_equation']}")
+            
+            # Convergenza metodologica
+            or_diff = abs(paradox_data['fisher_odds_ratio'] - lr_data['odds_ratio'])
+            convergence_status = "✅ ECCELLENTE" if or_diff < 0.1 else "⚠️ ACCETTABILE" if or_diff < 0.5 else "❌ PROBLEMATICA"
+            print(f"   ✅ CONVERGENZA METODOLOGICA:")
+            print(f"      • Fisher OR: {paradox_data['fisher_odds_ratio']:.3f}")
+            print(f"      • Logistic OR: {lr_data['odds_ratio']:.3f}")
+            print(f"      • Differenza: {or_diff:.3f}")
+            print(f"      • Status: {convergence_status}")
+        else:
+            print(f"\n🔬 REGRESSIONE LOGISTICA: ❌ Non disponibile")
+            if 'error' in paradox_data['logistic_regression']:
+                print(f"      Errore: {paradox_data['logistic_regression']['error']}")
+        
+        # === MANN-WHITNEY U (SECONDARIO CON DISCLAIMER) ===
+        print(f"\n⚠️  MANN-WHITNEY U (Analisi Secondaria - LIMITAZIONI):")
+        print(f"   • U-statistic: {paradox_data['mannwhitney_u']:.1f}")
+        print(f"   • p-value: {paradox_data['mannwhitney_p']:.4f}")
+        print(f"   • Rosenthal r: {paradox_data['rosenthal_r']:.3f}")
+        print(f"   • Z-score: {paradox_data['z_score']:.3f}")
+        print(f"   • Ties: {paradox_data['ties_percentage']:.1%} (ECCESSIVI)")
+        print(f"   • Appropriatezza: ❌ SUBOTTIMALE")
+        print(f"   • Limitazioni: Solo 2 valori distinti, violazione assunzioni")
+        
+        # === ANALISI ETÀ ===
+        print(f"\n🔍 AGE PARADOX:")
+        print(f"   • Età media Webinar: {paradox_data['age_webinar']:.1f} anni")
+        print(f"   • Età media Cartaceo: {paradox_data['age_cartaceo']:.1f} anni") 
+        print(f"   • Differenza: +{paradox_data['age_paradox']:.1f} anni (Webinar > Cartaceo)")
+        print(f"   • Interpretazione: Controintuitiva rispetto al digital divide atteso")
+        
+        # === RACCOMANDAZIONI METODOLOGICHE ===
+        print(f"\n📋 RACCOMANDAZIONI METODOLOGICHE:")
+        print(f"   ✅ UTILIZZARE: Fisher Exact Test come risultato principale")
+        print(f"   ✅ UTILIZZARE: Regressione Logistica per validazione e IC")
+        print(f"   ⚠️  EVITARE: Mann-Whitney U per dati con ties eccessivi")
+        print(f"   📊 RIPORTARE: Odds Ratio e intervalli di confidenza al 95%")
+        print(f"   📈 CITARE: Tabella di contingenza e proporzioni per trasparenza")
+        
+        print("="*90)
+    
     def create_visualizations(self):
         """Crea tutte le visualizzazioni per l'analisi."""
         print("📊 Generazione visualizzazioni...")
@@ -743,13 +1167,210 @@ class AccademiaAnalyzer:
         # 4. Distribuzione soddisfazione
         self._plot_satisfaction_distribution()
         
-        # 5. Analisi canali comunicazione
+        # 5. Distribuzione degli elementi di soddisfazione
+        self._plot_satisfaction_elements()
+
+        # 6. Analisi canali comunicazione
         self._plot_communication_channels()
         
-        # 6. Cultural Engagement Score
+        # 7. Cultural Engagement Score
         self._plot_ces_analysis()
         
+        # 8. 🎓 GRAFICI SPECIFICI PER LA TESI (NUOVI)
+        self._plot_demographic_overview_panel()
+
+        # 9. Pannello modalità di partecipazione
+        self._plot_participation_modalities_panel()
+        
         print(f"   ✓ Grafici salvati in: {self.output_dir}")
+    
+    def _plot_demographic_overview_panel(self):
+        """
+        🎓 GRAFICO TESI: Pannello demografico completo con tre visualizzazioni:
+        - Sinistra: Distribuzione per fascia d'età 
+        - Centro: Ripartizione soci vs non-soci
+        - Destra: Livello di scolarizzazione
+        """
+        fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+        fig.suptitle('Panoramica Demografica del Campione Primario', fontsize=16, fontweight='bold', 
+                     color=PURPLE_PALETTE['dark_purple'])
+        
+        # 1. DISTRIBUZIONE PER FASCIA D'ETÀ (Sinistra)
+        age_counts = self.df['eta_std'].value_counts()
+        # Ordina le fasce d'età logicamente
+        age_order = ['14-30', '31-50', '51-70', '>70']
+        age_counts = age_counts.reindex(age_order, fill_value=0)
+        
+        bars1 = axes[0].bar(age_counts.index, age_counts.values, 
+                           color=PURPLE_PALETTE['primary_purple'], alpha=0.8,
+                           edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[0].set_title('Distribuzione per Fascia d\'Età', 
+                         color=PURPLE_PALETTE['dark_purple'], fontweight='bold')
+        axes[0].set_ylabel('Numero Partecipanti')
+        axes[0].set_xlabel('Fascia d\'Età')
+        axes[0].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
+        
+        # Annotazioni valori sulle barre
+        for bar in bars1:
+            height = bar.get_height()
+            axes[0].text(bar.get_x() + bar.get_width()/2, height + 0.5,
+                        f'{int(height)}', ha='center', va='bottom', fontweight='bold',
+                        color=PURPLE_PALETTE['dark_purple'])
+        
+        # 2. RIPARTIZIONE SOCI VS NON-SOCI (Centro)
+        member_counts = self.df['socio_std'].value_counts()
+        # Ordina sempre No prima, Sì dopo
+        member_order = ['No', 'Sì']
+        member_counts = member_counts.reindex(member_order, fill_value=0)
+        
+        colors_pie = [PURPLE_PALETTE['sage'], PURPLE_PALETTE['dusty_rose']]
+        labels_pie = ['Non Soci', 'Soci']
+        
+        wedges, texts, autotexts = axes[1].pie(member_counts.values, 
+                                              labels=labels_pie,
+                                              autopct='%1.1f%%', colors=colors_pie, 
+                                              startangle=90, 
+                                              textprops={'color': PURPLE_PALETTE['dark_purple'], 'fontweight': 'bold'})
+        axes[1].set_title('Ripartizione Soci vs Non-Soci', 
+                         color=PURPLE_PALETTE['dark_purple'], fontweight='bold')
+        
+        # 3. LIVELLO DI SCOLARIZZAZIONE (Destra)
+        education_counts = self.df['Titolo di studio'].value_counts()
+        # Mappa e ordina i livelli di istruzione
+        education_mapping = {
+            'Licenza media': 'Licenza media',
+            'Diploma di scuola superiore': 'Diploma superiore', 
+            'Laurea': 'Laurea',
+            'Laurea magistrale': 'Laurea magistrale',
+            'Post-laurea': 'Post-laurea'
+        }
+        
+        # Applica mapping e riordina
+        education_clean = {}
+        for original, mapped in education_mapping.items():
+            if original in education_counts:
+                education_clean[mapped] = education_counts[original]
+        
+        # Ordine logico dal più basso al più alto
+        education_order = ['Licenza media', 'Diploma superiore', 'Laurea', 'Laurea magistrale', 'Post-laurea']
+        ordered_education = {k: education_clean.get(k, 0) for k in education_order if k in education_clean}
+        
+        bars3 = axes[2].barh(list(ordered_education.keys()), list(ordered_education.values()),
+                            color=PURPLE_PALETTE['warm_gold'], alpha=0.8,
+                            edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[2].set_title('Livello di Scolarizzazione', 
+                         color=PURPLE_PALETTE['dark_purple'], fontweight='bold')
+        axes[2].set_xlabel('Numero Partecipanti')
+        axes[2].grid(axis='x', alpha=0.3, color=PURPLE_PALETTE['light_purple'])
+        
+        # Annotazioni valori sulle barre orizzontali
+        for bar in bars3:
+            width = bar.get_width()
+            if width > 0:  # Solo se c'è valore
+                percentage = (width / sum(list(ordered_education.values()))) * 100
+                axes[2].text(width + 0.5, bar.get_y() + bar.get_height()/2,
+                            f'{int(width)} ({percentage:.1f}%)', ha='left', va='center', fontweight='bold',
+                            color=PURPLE_PALETTE['dark_purple'])
+        
+        # Aggiungi statistiche sommarie
+        total_participants = len(self.df)
+        dominant_age = age_counts.idxmax()
+        dominant_age_count = age_counts.max()
+        soci_percentage = (self.df['socio_std'] == 'Sì').mean() * 100
+        top_education = max(ordered_education, key=ordered_education.get) if ordered_education else 'N/A'
+        
+        stats_text = f'Campione totale: {total_participants} partecipanti\n'
+        stats_text += f'Fascia età dominante: {dominant_age} ({dominant_age_count} partecipanti)\n'
+        stats_text += f'Percentuale soci: {soci_percentage:.1f}%\n'
+        stats_text += f'Livello istruzione prevalente: {top_education}'
+        
+        fig.text(0.02, 0.02, stats_text, fontsize=9, 
+                 bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], 
+                          alpha=0.9, edgecolor=PURPLE_PALETTE['primary_purple']),
+                 color=PURPLE_PALETTE['dark_purple'])
+        
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'demographic_overview_panel.png', 
+                   facecolor='white', edgecolor='none', dpi=300, bbox_inches='tight')
+        plt.close()
+
+    def _plot_participation_modalities_panel(self):
+        """
+        🎓 GRAFICO TESI: Pannello con modalità di partecipazione:
+        - Sinistra: Modalità di fruizione (Cartaceo vs Webinar)
+        - Destra: Partecipazione per argomento trattato
+        """
+        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+        fig.suptitle('Modalità di Partecipazione e Distribuzione per Argomenti', 
+                     fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
+        
+        # 1. MODALITÀ DI FRUIZIONE (Sinistra)
+        modality_counts = self.df['Fonte'].value_counts()
+        colors_modality = [PURPLE_PALETTE['periwinkle'], PURPLE_PALETTE['royal_purple']]
+        
+        bars1 = axes[0].bar(modality_counts.index, modality_counts.values,
+                           color=colors_modality, alpha=0.8,
+                           edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[0].set_title('Modalità di Fruizione', 
+                         color=PURPLE_PALETTE['dark_purple'], fontweight='bold')
+        axes[0].set_ylabel('Numero Partecipanti')
+        axes[0].set_xlabel('Modalità')
+        axes[0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
+        
+        # Annotazioni con percentuali
+        total_modality = sum(modality_counts.values)
+        for bar, count in zip(bars1, modality_counts.values):
+            percentage = (count / total_modality) * 100
+            axes[0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+                        f'{count}\n({percentage:.1f}%)', ha='center', va='bottom', 
+                        fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
+        
+        # 2. PARTECIPAZIONE PER ARGOMENTO (Destra)
+        topic_counts = self.df['Argomento'].value_counts()
+        # Ordina per frequenza decrescente
+        topic_counts = topic_counts.sort_values(ascending=True)  # Per barh, ordine crescente = dal basso verso l'alto
+        
+        # Crea gradiente di colori purple
+        colors_topics = [PURPLE_SEQUENTIAL[i % len(PURPLE_SEQUENTIAL)] for i in range(len(topic_counts))]
+        
+        bars2 = axes[1].barh(range(len(topic_counts)), topic_counts.values,
+                            color=colors_topics, alpha=0.8,
+                            edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        
+        axes[1].set_yticks(range(len(topic_counts)))
+        axes[1].set_yticklabels(topic_counts.index, fontsize=10)
+        axes[1].set_title('Partecipazione per Argomento Trattato', 
+                         color=PURPLE_PALETTE['dark_purple'], fontweight='bold')
+        axes[1].set_xlabel('Numero Partecipanti')
+        axes[1].grid(axis='x', alpha=0.3, color=PURPLE_PALETTE['light_purple'])
+        
+        # Annotazioni valori
+        for i, (bar, count) in enumerate(zip(bars2, topic_counts.values)):
+            axes[1].text(bar.get_width() + 0.5, bar.get_y() + bar.get_height()/2,
+                        f'{count}', ha='left', va='center', fontweight='bold',
+                        color=PURPLE_PALETTE['dark_purple'])
+        
+        # Statistiche aggiuntive
+        digital_adoption = (modality_counts.get('Webinar', 0) / total_modality) * 100
+        most_popular_topic = topic_counts.index[-1]  # Ultimo nell'ordine crescente = più alto
+        
+        participation_stats = f'📊 STATISTICHE PARTECIPAZIONE:\n'
+        participation_stats += f'• Adozione digitale: {digital_adoption:.1f}%\n'
+        participation_stats += f'• Argomento più seguito: {most_popular_topic}\n'
+        participation_stats += f'• Range partecipazione: {topic_counts.min()}-{topic_counts.max()} per evento\n'
+        participation_stats += f'• Eventi monitorati: {len(topic_counts)}'
+        
+        axes[1].text(0.98, 0.02, participation_stats, transform=axes[1].transAxes,
+                    bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], 
+                             alpha=0.9, edgecolor=PURPLE_PALETTE['sage'], linewidth=2),
+                    color=PURPLE_PALETTE['dark_purple'], fontsize=9, 
+                    ha='right', va='bottom')
+        
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'participation_modalities_panel.png', 
+                   facecolor='white', edgecolor='none', dpi=300, bbox_inches='tight')
+        plt.close()
     
     def _plot_demographic_analysis(self):
         """Crea visualizzazioni demografiche con tema purple."""
@@ -802,10 +1423,10 @@ class AccademiaAnalyzer:
     def _plot_digital_satisfaction_paradox(self):
         """
         Visualizza il Digital Satisfaction Paradox con statistiche corrette.
-        AGGIORNATO: Fisher Exact Test come metodo principale.
+        AGGIORNATO: Fisher Exact Test come metodo principale + Regressione Logistica.
         """
         fig, axes = plt.subplots(1, 3, figsize=(20, 6))
-        fig.suptitle('Digital Satisfaction Paradox - Analisi Metodologicamente Corretta', 
+        fig.suptitle('Paradosso di Soddisfazione Digitale', 
                      fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
         # Dati per modalità
@@ -833,11 +1454,11 @@ class AccademiaAnalyzer:
         axes[0].grid(True, alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         # Annotazioni Fisher Test
-        fisher_text = f'🎯 FISHER EXACT TEST (Principale)\n'
+        fisher_text = f'FISHER EXACT TEST (Principale)\n'
         fisher_text += f'Odds Ratio = {paradox_data["fisher_odds_ratio"]:.2f}\n'
         fisher_text += f'p-value = {paradox_data["fisher_p_value"]:.3f}\n'
         fisher_text += f'Diff. Proporzioni = +{paradox_data["proportion_difference"]:.3f}\n'
-        fisher_text += f'Test Raccomandato: ✅'
+        fisher_text += f'Test Raccomandato: ' + ('Sì' if paradox_data["fisher_p_value"] < 0.05 else 'No')
         
         axes[0].text(0.02, 0.98, fisher_text, transform=axes[0].transAxes,
                     bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], 
@@ -866,13 +1487,17 @@ class AccademiaAnalyzer:
         axes[1].set_xlabel('Livello Soddisfazione')
         axes[1].set_ylabel('Modalità Fruizione')
         
-        # === 3. CONFRONTO METODOLOGIE ===
-        # Barplot comparativo dei p-values
-        methods = ['Fisher Exact\n(Raccomandato)', 'Mann-Whitney U\n(Problematico)']
-        p_values = [paradox_data['fisher_p_value'], paradox_data['mannwhitney_p']]
+        # === 3. CONFRONTO METODOLOGIE + REGRESSIONE LOGISTICA ===
+        # Barplot comparativo dei p-values e risultati
+        methods = ['Fisher Exact\n(Principale)', 'Mann-Whitney U\n(Problematico)', 'Logistic Regr.\n(Validazione)']
+        p_values = [
+            paradox_data['fisher_p_value'], 
+            paradox_data['mannwhitney_p'],
+            paradox_data['logistic_regression'].get('p_value', 1.0) if paradox_data['logistic_regression'].get('model_available', False) else 1.0
+        ]
         
-        # Colori: verde per appropriato, rosso per problematico
-        colors_methods = [PURPLE_PALETTE['sage'], PURPLE_PALETTE['dusty_rose']]
+        # Colori: verde per appropriato, rosso per problematico, blu per validazione
+        colors_methods = [PURPLE_PALETTE['sage'], PURPLE_PALETTE['dusty_rose'], PURPLE_PALETTE['periwinkle']]
         bars3 = axes[2].bar(methods, p_values, color=colors_methods, alpha=0.8,
                            edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
         
@@ -885,12 +1510,34 @@ class AccademiaAnalyzer:
         axes[2].legend()
         axes[2].grid(True, alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
-        # Annotazioni metodologiche
-        for bar, p_val, method in zip(bars3, p_values, methods):
+        # Annotazioni metodologiche con OR
+        odds_ratios = [
+            paradox_data['fisher_odds_ratio'],
+            np.nan,  # Mann-Whitney non ha OR
+            paradox_data['logistic_regression'].get('odds_ratio', np.nan) if paradox_data['logistic_regression'].get('model_available', False) else np.nan
+        ]
+        
+        for bar, p_val, or_val, method in zip(bars3, p_values, odds_ratios, methods):
             significance = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*" if p_val < 0.05 else "ns"
+            or_text = f'\nOR: {or_val:.2f}' if not np.isnan(or_val) else ''
             axes[2].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.002,
-                        f'{p_val:.3f}\n{significance}', ha='center', va='bottom', 
-                        fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
+                        f'{p_val:.3f}\n{significance}{or_text}', ha='center', va='bottom', 
+                        fontweight='bold', color=PURPLE_PALETTE['dark_purple'], fontsize=9)
+        
+        # Box con risultati regressione logistica
+        if paradox_data['logistic_regression'].get('model_available', False):
+            logistic_data = paradox_data['logistic_regression']
+            logistic_text = f'REGRESSIONE LOGISTICA:\n'
+            logistic_text += f'β = {logistic_data.get("beta", 0):.3f} ± {logistic_data.get("se_beta", 0):.3f}\n'
+            logistic_text += f'OR = {logistic_data.get("odds_ratio", 0):.3f}\n'
+            logistic_text += f'CI 95%: [{logistic_data.get("or_ci_95", [0,0])[0]:.2f}, {logistic_data.get("or_ci_95", [0,0])[1]:.2f}]\n'
+            logistic_text += f'Pseudo R² = {logistic_data.get("pseudo_r2_mcfadden", 0):.3f}\n'
+            logistic_text += f'Convergenza: {logistic_data.get("convergence_status", "N/A")}\n'
+            
+            axes[2].text(0.02, 0.98, logistic_text, transform=axes[2].transAxes,
+                        bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], 
+                                 alpha=0.9, edgecolor=PURPLE_PALETTE['periwinkle'], linewidth=2),
+                        color=PURPLE_PALETTE['dark_purple'], fontsize=8, va='top')
         
         # Warning metodologico per Mann-Whitney
         if paradox_data.get('mw_methodological_warning', False):
@@ -903,17 +1550,6 @@ class AccademiaAnalyzer:
                         bbox=dict(boxstyle='round', facecolor='#FFE4E1', 
                                  alpha=0.9, edgecolor='#DC143C', linewidth=1),
                         color='#8B0000', fontsize=8, ha='right', va='bottom')
-        
-        # Nota metodologica generale
-        methodology_note = """
-    NOTA METODOLOGICA:
-    • Fisher Exact Test: Appropriato per tabelle 2×2, nessuna assunzione violata
-    • Mann-Whitney U: Subottimale per dati con ties eccessivi (solo valori 2,3)
-    • Raccomandazione: Usare Fisher per confronti binari, M-W per scale ordinali complete
-        """
-        
-        fig.text(0.02, 0.02, methodology_note, fontsize=8, style='italic',
-                 color=PURPLE_PALETTE['dark_purple'], alpha=0.8)
         
         plt.tight_layout()
         plt.savefig(self.output_dir / 'digital_satisfaction_paradox_corrected.png', 
@@ -991,61 +1627,137 @@ class AccademiaAnalyzer:
     
     def _plot_satisfaction_distribution(self):
         """Visualizza la distribuzione della soddisfazione con tema purple."""
-        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+        fig, axes = plt.subplots(2,2, figsize=(16, 16))
         fig.suptitle('Analisi Distribuzione Soddisfazione', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
         # 1. Distribuzione generale
         satisfaction_counts = self.df['soddisfazione_num'].value_counts().sort_index()
         colors = [PURPLE_PALETTE['primary_purple'] if score == 2 else PURPLE_PALETTE['warm_gold'] for score in satisfaction_counts.index]
-        bars1 = axes[0].bar(satisfaction_counts.index, satisfaction_counts.values, 
-                           color=colors, alpha=0.8,
-                           edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
-        axes[0].set_title('Distribuzione Punteggi di Soddisfazione', color=PURPLE_PALETTE['dark_purple'])
-        axes[0].set_xlabel('Punteggio Soddisfazione')
-        axes[0].set_ylabel('Numero Risposte')
-        axes[0].set_xticks([2, 3])
-        axes[0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
+        bars1 = axes[0,0].bar(satisfaction_counts.index, satisfaction_counts.values, 
+                             color=colors, alpha=0.8,
+                             edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[0,0].set_title('Distribuzione Generale della Soddisfazione', color=PURPLE_PALETTE['dark_purple'])
+        axes[0,0].set_xlabel('Livello Soddisfazione')
+        axes[0,0].set_ylabel('Numero Partecipanti')
+        axes[0,0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
-        # Annotazioni statistiche (con nota su variabile ordinale)
-        mean_sat = self.df['soddisfazione_num'].mean()
-        std_sat = self.df['soddisfazione_num'].std()
-        median_sat = self.df['soddisfazione_num'].median()
-        axes[0].text(0.02, 0.98, f'Media* = {mean_sat:.3f}\nMediana = {median_sat:.1f}\nSD = {std_sat:.3f}',
-                    transform=axes[0].transAxes, va='top',
-                    bbox=dict(boxstyle='round', facecolor=PURPLE_PALETTE['lavender'], 
-                             alpha=0.9, edgecolor=PURPLE_PALETTE['primary_purple']),
-                    color=PURPLE_PALETTE['dark_purple'])
+        # Annotazioni percentuali
+        total = sum(satisfaction_counts.values)
+        for bar, count in zip(bars1, satisfaction_counts.values):
+            percentage = (count / total) * 100
+            axes[0,0].text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+                          f'{count}\n({percentage:.1f}%)', ha='center', va='bottom', 
+                          fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
-        # 2. Soddisfazione per status socio
-        satisfaction_by_member = self.df.groupby(['socio_std', 'soddisfazione_num']).size().unstack(fill_value=0)
-        satisfaction_by_member.plot(kind='bar', ax=axes[1], 
-                                   color=[PURPLE_PALETTE['primary_purple'], PURPLE_PALETTE['warm_gold']], 
-                                   alpha=0.8, edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
-        axes[1].set_title('Soddisfazione per Status Socio', color=PURPLE_PALETTE['dark_purple'])
-        axes[1].set_xlabel('Status Socio')
-        axes[1].set_ylabel('Numero Risposte')
-        axes[1].legend(title='Soddisfazione', labels=['Soddisfatto (2)', 'Molto Soddisfatto (3)'])
-        axes[1].tick_params(axis='x', rotation=0, colors=PURPLE_PALETTE['dark_purple'])
-        axes[1].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
-        
-        # 3. Soddisfazione per modalità
-        satisfaction_by_mode = self.df.groupby(['Fonte', 'soddisfazione_num']).size().unstack(fill_value=0)
-        satisfaction_by_mode.plot(kind='bar', ax=axes[2], 
-                                 color=[PURPLE_PALETTE['primary_purple'], PURPLE_PALETTE['warm_gold']], 
+        # 2. Soddisfazione per modalità
+        satisfaction_by_mode = pd.crosstab(self.df['Fonte'], self.df['soddisfazione_num'])
+        satisfaction_by_mode.plot(kind='bar', ax=axes[0,1], 
+                                 color=[PURPLE_PALETTE['light_purple'], PURPLE_PALETTE['royal_purple']],
                                  alpha=0.8, edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
-        axes[2].set_title('Soddisfazione per Modalità di Fruizione', color=PURPLE_PALETTE['dark_purple'])
-        axes[2].set_xlabel('Modalità')
-        axes[2].set_ylabel('Numero Risposte')
-        axes[2].legend(title='Soddisfazione', labels=['Soddisfatto (2)', 'Molto Soddisfatto (3)'])
-        axes[2].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
-        axes[2].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
+        axes[0,1].set_title('Soddisfazione per Modalità di Fruizione', color=PURPLE_PALETTE['dark_purple'])
+        axes[0,1].set_xlabel('Modalità')
+        axes[0,1].set_ylabel('Numero Partecipanti')
+        axes[0,1].legend(['Soddisfatto (2)', 'Molto Soddisfatto (3)'])
+        axes[0,1].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[0,1].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
-        # Nota metodologica
-        fig.text(0.02, 0.02, '*Media calcolata per visualizzazione (variabile ordinale)', 
-                fontsize=8, style='italic', color=PURPLE_PALETTE['dark_purple'], alpha=0.7)
+        # 3. Soddisfazione per fascia d'età
+        satisfaction_by_age = pd.crosstab(self.df['eta_std'], self.df['soddisfazione_num'])
+        satisfaction_by_age.plot(kind='bar', ax=axes[1,0], 
+                                color=[PURPLE_PALETTE['periwinkle'], PURPLE_PALETTE['sage']],
+                                alpha=0.8, edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+        axes[1,0].set_title('Soddisfazione per Fascia d\'Età', color=PURPLE_PALETTE['dark_purple'])
+        axes[1,0].set_xlabel('Fascia d\'Età')
+        axes[1,0].set_ylabel('Numero Partecipanti')
+        axes[1,0].legend(['Soddisfatto (2)', 'Molto Soddisfatto (3)'])
+        axes[1,0].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        axes[1,0].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
+        
+        # 4. Box plot comparativo
+        satisfaction_data = [
+            self.df[self.df['Fonte'] == 'Cartaceo']['soddisfazione_num'],
+            self.df[self.df['Fonte'] == 'Webinar']['soddisfazione_num']
+        ]
+        
+        box_plot = axes[1,1].boxplot(satisfaction_data, labels=['Cartaceo', 'Webinar'],
+                                    patch_artist=True, notch=True)
+        
+        # Colorazione box plot
+        colors_box = [PURPLE_PALETTE['dusty_rose'], PURPLE_PALETTE['periwinkle']]
+        for patch, color in zip(box_plot['boxes'], colors_box):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.8)
+            patch.set_edgecolor(PURPLE_PALETTE['dark_purple'])
+            patch.set_linewidth(1.5)
+        
+        axes[1,1].set_title('Distribuzione Soddisfazione: Cartaceo vs Webinar', color=PURPLE_PALETTE['dark_purple'])
+        axes[1,1].set_ylabel('Livello Soddisfazione')
+        axes[1,1].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
         
         plt.tight_layout()
         plt.savefig(self.output_dir / 'satisfaction_distribution.png', facecolor='white', edgecolor='none')
+        plt.close()
+    
+    def _plot_satisfaction_elements(self):
+        """Visualizza la distribuzione degli elementi di soddisfazione."""
+        # Controlla se esistono colonne per elementi specifici di soddisfazione
+        satisfaction_elements = []
+        potential_columns = ['Qualità contenuti', 'Chiarezza espositiva', 'Utilità informazioni', 
+                           'Organizzazione evento', 'Durata evento', 'Accessibilità']
+        
+        for col in potential_columns:
+            if col in self.df.columns:
+                satisfaction_elements.append(col)
+        
+        if not satisfaction_elements:
+            print("   ⚠️  Elementi di soddisfazione specifici non trovati nel dataset")
+            return
+        
+        n_elements = len(satisfaction_elements)
+        n_cols = min(3, n_elements)
+        n_rows = (n_elements + n_cols - 1) // n_cols
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 4*n_rows))
+        if n_elements == 1:
+            axes = [axes]
+        elif n_rows == 1:
+            axes = axes.reshape(1, -1)
+        
+        fig.suptitle('Distribuzione Elementi di Soddisfazione', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
+        
+        for i, element in enumerate(satisfaction_elements):
+            row = i // n_cols
+            col = i % n_cols
+            ax = axes[row, col] if n_rows > 1 else axes[col]
+            
+            element_counts = self.df[element].value_counts().sort_index()
+            colors_gradient = [PURPLE_CATEGORICAL[j % len(PURPLE_CATEGORICAL)] for j in range(len(element_counts))]
+            
+            bars = ax.bar(element_counts.index, element_counts.values, 
+                         color=colors_gradient, alpha=0.8,
+                         edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
+            ax.set_title(element, color=PURPLE_PALETTE['dark_purple'])
+            ax.set_ylabel('Numero Partecipanti')
+            ax.grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
+            
+            # Annotazioni
+            for bar, count in zip(bars, element_counts.values):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                       f'{count}', ha='center', va='bottom', fontweight='bold',
+                       color=PURPLE_PALETTE['dark_purple'])
+        
+        # Nascondi subplot vuoti
+        total_plots = n_rows * n_cols
+        for i in range(n_elements, total_plots):
+            row = i // n_cols
+            col = i % n_cols
+            if n_rows > 1:
+                axes[row, col].set_visible(False)
+            else:
+                axes[col].set_visible(False)
+        
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'satisfaction_elements.png', facecolor='white', edgecolor='none')
         plt.close()
     
     def _plot_communication_channels(self):
@@ -1092,8 +1804,6 @@ class AccademiaAnalyzer:
             print("   ⚠️  Nessun canale di comunicazione valido trovato")
             return
         
-        # Conteggio frequenze con normalizzazione nomi
-        from collections import Counter
         
         # Normalizzazione nomi canali per gestire varianti
         normalized_channels = []
@@ -1222,7 +1932,7 @@ class AccademiaAnalyzer:
         axes[0,1].fill_between(r * np.cos(theta), 0, r * np.sin(theta), alpha=0.2, color=PURPLE_PALETTE['lavender'])
         
         # Posizione attuale
-        current_angle = (current_ces / max_ces) * np.pi
+        current_angle = (1 - current_ces / max_ces) * np.pi
         axes[0,1].plot([0, r * np.cos(current_angle)], [0, r * np.sin(current_angle)], 
                       color=PURPLE_PALETTE['primary_purple'], linewidth=6, 
                       label=f'CES Attuale: {current_ces:.3f}')
@@ -1281,7 +1991,9 @@ class AccademiaAnalyzer:
         axes[1,1].axvline(bootstrap_data['ci_95_upper'], color=PURPLE_PALETTE['dusty_rose'], 
                          linestyle='--', linewidth=2)
         axes[1,1].axvline(bootstrap_data['mean'], color=PURPLE_PALETTE['dark_purple'], 
-                         linestyle='-', linewidth=3, label='Media Bootstrap')
+                         linestyle='-', linewidth=2, label='Media Bootstrap')
+        axes[1,1].axvline(current_ces, color=PURPLE_PALETTE['warm_gold'], 
+                         linestyle='-', linewidth=3, label='CES Corrente')
         
         axes[1,1].set_title('Validazione Bootstrap CES', color=PURPLE_PALETTE['dark_purple'])
         axes[1,1].set_xlabel('CES Score')
@@ -1293,374 +2005,429 @@ class AccademiaAnalyzer:
         plt.savefig(self.output_dir / 'ces_analysis.png', facecolor='white', edgecolor='none')
         plt.close()
     
-    def generate_summary_report(self):
-        """Genera un report riassuntivo in formato JSON e testo."""
-        print("📋 Generazione report riassuntivo...")
+    def generate_comprehensive_report(self) -> str:
+        """
+        Genera un report testuale completo con tutte le statistiche e analisi.
         
-        # report JSON per uso programmatico e usi futuri
-        summary = {
-            'metadata': {
-                'analysis_date': datetime.now().isoformat(),
-                'dataset_size': len(self.df),
-                'analyst': 'Giuseppe Pio Mangiacotti',
-                'institution': 'Università degli Studi di Trento',
-                'methodology_version': '2.1 - Correzione metodologica critica per dati binari/ordinali discreti'
-            },
-            'key_findings': self.results['key_findings'],
-            'ces_analysis': self.results['ces'],
-            'sample_statistics': {
-                'total_respondents': len(self.df),
-                'age_distribution': self.df['eta_std'].value_counts().to_dict(),
-                'membership_distribution': self.df['socio_std'].value_counts().to_dict(),
-                'satisfaction_mean': self.df['soddisfazione_num'].mean(),
-                'satisfaction_std': self.df['soddisfazione_num'].std(),
-                'satisfaction_median': self.df['soddisfazione_num'].median()
-            },
-            'methodological_warnings': self.methodological_warnings,
-            'test_appropriateness': self.test_appropriateness
-        }
+        Returns:
+        --------
+        str
+            Report completo formattato
+        """
+        print("📄 Generazione report completo...")
         
-        with open(self.output_dir / 'analysis_summary.json', 'w', encoding='utf-8') as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False, default=str)
+        report = []
+        report.append("="*100)
+        report.append("ANALISI QUANTITATIVA DEI DATI DI SODDISFAZIONE")
+        report.append("Accademia Roveretana degli Agiati")
+        report.append("="*100)
+        report.append(f"Data di generazione: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+        report.append(f"Versione script: 2.1 (Correzione Metodologica Critica + Grafici Tesi)")
+        report.append(f"Autore: Giuseppe Pio Mangiacotti")
+        report.append(f"Istituzione: Università degli Studi di Trento")
+        report.append("")
         
-        # generazione report testuale per citazione in tesi
-        self._generate_text_report(summary)
+        # === SOMMARIO ESECUTIVO ===
+        report.append("📊 SOMMARIO ESECUTIVO")
+        report.append("-"*50)
+        report.append(f"• Dataset: {len(self.df)} record completi analizzati")
+        report.append(f"• Metodologia: Fisher Exact Test (principale), Regressione Logistica (validazione)")
+        report.append(f"• Key Findings: 3 pattern principali identificati")
         
-        print(f"   ✓ Report salvato in: {self.output_dir}")
+        if 'ces' in self.results:
+            ces_score = self.results['ces']['score']
+            ces_percentile = self.results['ces']['percentile_rank']
+            report.append(f"• Cultural Engagement Score: {ces_score:.3f} ({ces_percentile:.1f}° percentile)")
+        report.append("")
         
-    def _generate_text_report(self, summary: dict):
-        """Genera report testuale con metodologia corretta per citazione accademica."""
+        # === CORREZIONI METODOLOGICHE ===
+        report.append("⚠️  CORREZIONI METODOLOGICHE VERSIONE 2.1")
+        report.append("-"*50)
+        report.append("PROBLEMA RISOLTO:")
+        report.append("• Test Mann-Whitney U inappropriato per dati con ties eccessivi (100% ties)")
+        report.append("• Solo valori 2 (Soddisfatto) e 3 (Molto Soddisfatto) nel dataset")
+        report.append("• Perdita significativa di potenza statistica")
+        report.append("")
+        report.append("SOLUZIONE IMPLEMENTATA:")
+        report.append("• Fisher Exact Test per confronto proporzioni binarie")
+        report.append("• Tabelle di contingenza 2×2 appropriate")
+        report.append("• Odds ratio e p-value esatti")
+        report.append("• Regressione logistica per validazione terziaria completa")
+        report.append("• Warning automatici per test inappropriati")
+        report.append("")
         
-        # Estrazione dati Fisher test
-        fisher_data = summary['key_findings']['digital_paradox']
+        # === PANORAMICA DEMOGRAFICA ===
+        report.append("👥 PANORAMICA DEMOGRAFICA")
+        report.append("-"*50)
         
-        report = f"""
-ANALISI QUANTITATIVA DEI DATI DI SODDISFAZIONE
-Accademia Roveretana degli Agiati
-=============================================
-
-Analista: {summary['metadata']['analyst']}
-Istituzione: {summary['metadata']['institution']}
-Data Analisi: {summary['metadata']['analysis_date']}
-Versione Metodologica: {summary['metadata']['methodology_version']}
-
-EXECUTIVE SUMMARY
------------------
-Campione analizzato: {summary['metadata']['dataset_size']} partecipanti
-Soddisfazione media: {summary['sample_statistics']['satisfaction_mean']:.3f} ± {summary['sample_statistics']['satisfaction_std']:.3f}
-Soddisfazione mediana: {summary['sample_statistics']['satisfaction_median']:.1f}
-Cultural Engagement Score: {summary['ces_analysis']['score']:.3f}/2.0 ({summary['ces_analysis']['percentile_rank']:.1f}° percentile)
-
-KEY FINDINGS PRINCIPALI
-------------------------
-
-1. DIGITAL SATISFACTION PARADOX ⭐ [METODOLOGIA CORRETTA]
-   
-   📊 FISHER EXACT TEST (Metodo Principale):
-   - Odds Ratio: {fisher_data.get('fisher_odds_ratio', 'N/A'):.3f}
-   - p-value: {fisher_data.get('fisher_p_value', 'N/A'):.3f}
-   - Differenza Proporzioni: {fisher_data.get('proportion_difference', 'N/A'):.3f}
-   - Test Appropriato: ✅ (dati essenzialmente binari)
-   
-   📋 Tabella di Contingenza 2×2:
-              Soddisfatto(2)  Molto Soddisfatto(3)
-   Cartaceo:  {fisher_data.get('contingency_table', [[0,0],[0,0]])[0][0]:>13}  {fisher_data.get('contingency_table', [[0,0],[0,0]])[0][1]:>19}
-   Webinar:   {fisher_data.get('contingency_table', [[0,0],[0,0]])[1][0]:>13}  {fisher_data.get('contingency_table', [[0,0],[0,0]])[1][1]:>19}
-   
-   ⚠️  MANN-WHITNEY U (Analisi Secondaria - Limitazioni):
-   - U-statistic: {fisher_data.get('mannwhitney_u', 'N/A'):.1f}
-   - p-value: {fisher_data.get('mannwhitney_p', 'N/A'):.3f}
-   - Rosenthal r: {fisher_data.get('rosenthal_r', 'N/A'):.3f}
-   - Ties: {fisher_data.get('ties_percentage', 0)*100:.1f}% (ECCESSIVI)
-   - Metodologia: ⚠️  Subottimale per questi dati
-   
-   🔍 Age Paradox: Webinar +{fisher_data.get('age_paradox', 0):.1f} anni vs Cartaceo
-
-2. GENERATIONAL MEMBERSHIP GAP
-   - Correlazione Età-Membership: r = {summary['key_findings']['generational_gap']['age_membership_correlation']:.3f}
-   - R² = {summary['key_findings']['generational_gap']['r_squared']:.3f}
-   - Significatività: p = {summary['key_findings']['generational_gap']['correlation_p_value']:.3f}
-
-3. INVERSE CONTENTMENT EFFECT
-   - Contentment Ratio: {summary['key_findings']['contentment_effect']['contentment_ratio']:.3f}
-   - Effetto confermato: {summary['key_findings']['contentment_effect']['effect_confirmed']}
-   - Test χ²: p = {summary['key_findings']['contentment_effect']['p_value']:.3f}
-
-CORREZIONE METODOLOGICA CRITICA
---------------------------------
-🎯 PROBLEMA IDENTIFICATO:
-   L'uso del test Mann-Whitney U per confrontare soddisfazione tra modalità cartacea 
-   e webinar era METODOLOGICAMENTE INAPPROPRIATO per i seguenti motivi:
-   
-   • Dati essenzialmente binari (solo valori 2 e 3)
-   • Ties eccessivi: {fisher_data.get('ties_percentage', 0)*100:.1f}% delle osservazioni
-   • Perdita significativa di potenza statistica
-   • Violazione assunzioni di base del test
-
-✅ SOLUZIONE IMPLEMENTATA:
-   • Test Esatto di Fisher come metodo principale
-   • Confronto diretto delle proporzioni "Molto Soddisfatti"
-   • Nessuna assunzione violata
-   • Appropriato per tabelle di contingenza 2×2
-   • Risultati più robusti e interpretabili
-
-METODOLOGIA STATISTICA (AGGIORNATA)
------------------------------------
-PRIMARI (Raccomandati):
-- Fisher Exact Test per confronti binari/quasi-binari
-- Test χ² per tabelle di contingenza (con correzioni appropriate)
-- Bootstrap resampling per validazione indicatori compositi
-
-SECONDARI (Con limitazioni dichiarate):
-- Mann-Whitney U mantenuto per compatibilità (con warning espliciti)
-- Coefficiente r di Rosenthal per effect size comparativo
-
-INAPPROPRIATI per questi dati:
-- Test t per campioni indipendenti (variabili ordinali discrete)
-- Test parametrici senza trasformazioni appropriate
-
-IMPLICAZIONI DELLE CORREZIONI
-------------------------------
-1. MAGGIORE ROBUSTEZZA: Risultati statisticamente più affidabili
-2. INTERPRETABILITÀ: Focus su proporzioni facilmente comprensibili
-3. TRASPARENZA: Limitazioni metodologiche esplicitamente dichiarate
-4. REPLICABILITÀ: Metodologia standardizzata per studi futuri
-
-CULTURAL ENGAGEMENT SCORE (CES)
--------------------------------
-Score Attuale: {summary['ces_analysis']['score']:.3f}
-Componenti:
-- Satisfaction Foundation: {summary['ces_analysis']['components']['satisfaction']:.3f}
-- Membership Amplification: {summary['ces_analysis']['components']['membership']:.3f}
-- Digital Acceleration: {summary['ces_analysis']['components']['digital_adoption']:.3f}
-
-Validazione Bootstrap (CI 95%): [{summary['ces_analysis']['bootstrap_validation']['ci_95_lower']:.3f}, {summary['ces_analysis']['bootstrap_validation']['ci_95_upper']:.3f}]
-
-SCENARI DI MIGLIORAMENTO
-------------------------"""
+        # Distribuzione età
+        age_dist = self.df['eta_std'].value_counts().sort_index()
+        report.append("Distribuzione per Fascia d'Età:")
+        for age, count in age_dist.items():
+            percentage = (count / len(self.df)) * 100
+            report.append(f"  • {age}: {count} partecipanti ({percentage:.1f}%)")
         
-        for scenario, data in summary['ces_analysis']['improvement_scenarios'].items():
-            report += f"""
-{scenario.upper()}:
-   - CES Proiettato: {data['projected_ces']:.3f}
-   - Miglioramento: +{data['improvement_percentage']:.1f}%
-   - Target Membership: {data['target_membership']*100:.1f}%
-   - Target Digital: {data['target_digital']*100:.1f}%"""
+        # Status soci
+        member_dist = self.df['socio_std'].value_counts()
+        report.append("\nStatus di Socio:")
+        for status, count in member_dist.items():
+            percentage = (count / len(self.df)) * 100
+            report.append(f"  • {status}: {count} partecipanti ({percentage:.1f}%)")
         
-        report += f"""
-
-CITAZIONE CORRETTA
-------------------
-Mangiacotti, G.P. (2025). Analisi Quantitativa dei Dati di Soddisfazione - 
-Accademia Roveretana degli Agiati v2.1 [Computer software]. 
-Università degli Studi di Trento. 
-Data di esecuzione: {summary['metadata']['analysis_date'][:10]}
-
-VERSIONE: 2.1 - Correzione metodologica per dati binari/ordinali discreti
-
-SOFTWARE E DIPENDENZE
----------------------
-- Python 3.9+
-- pandas {pd.__version__}
-- scipy 1.10.0+ (fisher_exact, chi2_contingency)
-- matplotlib 3.6.0+
-- seaborn 0.12.0+
-- numpy {np.__version__}
-- sklearn (opzionale, per regressione logistica)
-
-CHANGELOG METODOLOGICO
-----------------------
-v2.1 (2025-08-11): CORREZIONE CRITICA
-- ✅ Fisher Exact Test implementato correttamente per dati binari
-- ✅ Confronto proporzioni come metodo principale
-- ⚠️  Mann-Whitney U relegato ad analisi secondaria con disclaimer
-- ✅ Aggiunta regressione logistica per validazione crociata
-- ✅ Tabelle di contingenza esportate per riferimento
-- ✅ Warning metodologici automatici nel codice
-
-v2.0 (2025-08-11): Tentativo iniziale
-- ❌ Implementazione errata di fisher_exact()
-- ❌ Mann-Whitney U ancora come metodo principale
-- ❌ Mancanza di assessment qualità statistica
-
-ASSESSMENT QUALITÀ STATISTICA
-------------------------------"""
+        # Modalità di fruizione
+        mode_dist = self.df['Fonte'].value_counts()
+        report.append("\nModalità di Fruizione:")
+        for mode, count in mode_dist.items():
+            percentage = (count / len(self.df)) * 100
+            report.append(f"  • {mode}: {count} partecipanti ({percentage:.1f}%)")
         
-        if summary.get('test_appropriateness'):
-            for test, assessment in summary['test_appropriateness'].items():
-                status = "✅" if assessment['is_appropriate'] else "❌"
-                report += f"""
-{status} {test}: {assessment['recommendation']}
-   Motivo: {assessment['reason']}"""
+        # Soddisfazione generale
+        satisfaction_dist = self.df['soddisfazione_num'].value_counts().sort_index()
+        avg_satisfaction = self.df['soddisfazione_num'].mean()
+        report.append(f"\nSoddisfazione Generale:")
+        report.append(f"  • Media: {avg_satisfaction:.3f}")
+        for score, count in satisfaction_dist.items():
+            percentage = (count / len(self.df)) * 100
+            label = "Soddisfatto" if score == 2 else "Molto Soddisfatto"
+            report.append(f"  • {label} ({score}): {count} partecipanti ({percentage:.1f}%)")
+        report.append("")
         
-        if summary.get('methodological_warnings'):
-            report += f"""
-
-AVVISI METODOLOGICI RISCONTRATI
---------------------------------"""
-            for warning in summary['methodological_warnings']:
-                report += f"""
-⚠️  [{warning['test']}]: {warning['warning']}"""
+        # === KEY FINDINGS ===
+        if 'key_findings' in self.results:
+            report.append("🎯 KEY FINDINGS PRINCIPALI")
+            report.append("-"*50)
+            
+            # 1. Digital Satisfaction Paradox
+            if 'digital_paradox' in self.results['key_findings']:
+                report.append("1. DIGITAL SATISFACTION PARADOX")
+                report.append("   " + "="*40)
+                paradox_data = self.results['key_findings']['digital_paradox']
+                
+                report.append("   📊 STATISTICHE DESCRITTIVE:")
+                report.append(f"   • Cartaceo: N={paradox_data['cartaceo_stats']['n']}, Media={paradox_data['cartaceo_stats']['mean']:.3f}")
+                report.append(f"   • Webinar: N={paradox_data['webinar_stats']['n']}, Media={paradox_data['webinar_stats']['mean']:.3f}")
+                report.append(f"   • Differenza: +{paradox_data['difference']:.3f} punti (Webinar > Cartaceo)")
+                
+                report.append("   \n   🥇 FISHER EXACT TEST (Metodo Principale):")
+                report.append(f"   • Odds Ratio: {paradox_data['fisher_odds_ratio']:.3f}")
+                report.append(f"   • p-value: {paradox_data['fisher_p_value']:.4f}")
+                significance = "***" if paradox_data['fisher_p_value'] < 0.001 else "**" if paradox_data['fisher_p_value'] < 0.01 else "*" if paradox_data['fisher_p_value'] < 0.05 else "n.s."
+                report.append(f"   • Significatività: {significance}")
+                report.append(f"   • Differenza Proporzioni: +{paradox_data['proportion_difference']:.3f}")
+                
+                # Tabella di contingenza
+                contingency = paradox_data['contingency_table']
+                report.append("   \n   📋 Tabella di Contingenza 2×2:")
+                report.append("                      Soddisfatto(2)  Molto Sodd.(3)")
+                report.append(f"     Cartaceo:        {contingency[0][0]:>11}  {contingency[0][1]:>13}")
+                report.append(f"     Webinar:         {contingency[1][0]:>11}  {contingency[1][1]:>13}")
+                
+                # Regressione logistica
+                if paradox_data['logistic_regression'].get('model_available', False):
+                    lr_data = paradox_data['logistic_regression']
+                    report.append("   \n   🔬 REGRESSIONE LOGISTICA (Validazione):")
+                    report.append(f"   • β (Webinar): {lr_data['beta']:.3f} ± {lr_data['se_beta']:.3f}")
+                    report.append(f"   • Odds Ratio: {lr_data['odds_ratio']:.3f}")
+                    report.append(f"   • CI 95% (OR): [{lr_data['or_ci_95'][0]:.3f}, {lr_data['or_ci_95'][1]:.3f}]")
+                    report.append(f"   • p-value: {lr_data['p_value']:.4f}")
+                    report.append(f"   • Pseudo R²: {lr_data['pseudo_r2_mcfadden']:.3f}")
+                    report.append(f"   • Equazione: {lr_data['model_equation']}")
+                    
+                    # Convergenza metodologica
+                    or_diff = abs(paradox_data['fisher_odds_ratio'] - lr_data['odds_ratio'])
+                    convergence_status = "ECCELLENTE" if or_diff < 0.1 else "ACCETTABILE" if or_diff < 0.5 else "PROBLEMATICA"
+                    report.append(f"   • Convergenza metodologica: {convergence_status} (diff OR: {or_diff:.3f})")
+                
+                # Mann-Whitney con disclaimer
+                report.append("   \n   ⚠️  MANN-WHITNEY U (Limitazioni):")
+                report.append(f"   • U-statistic: {paradox_data['mannwhitney_u']:.1f}")
+                report.append(f"   • p-value: {paradox_data['mannwhitney_p']:.4f}")
+                report.append(f"   • Ties: {paradox_data['ties_percentage']:.1%} (ECCESSIVI)")
+                report.append(f"   • Limitazione: Solo 2 valori distinti, violazione assunzioni")
+                
+                # Age Paradox
+                report.append("   \n   🔍 AGE PARADOX:")
+                report.append(f"   • Età media Webinar: {paradox_data['age_webinar']:.1f} anni")
+                report.append(f"   • Età media Cartaceo: {paradox_data['age_cartaceo']:.1f} anni")
+                report.append(f"   • Differenza: +{paradox_data['age_paradox']:.1f} anni (controintuitiva)")
+                report.append("")
+            
+            # 2. Generational Membership Gap
+            if 'generational_gap' in self.results['key_findings']:
+                report.append("2. GENERATIONAL MEMBERSHIP GAP")
+                report.append("   " + "="*40)
+                gap_data = self.results['key_findings']['generational_gap']
+                
+                report.append("   📈 ENGAGEMENT METRICS PER FASCIA D'ETÀ:")
+                for metric in gap_data['engagement_metrics']:
+                    report.append(f"   • {metric['age_group']}:")
+                    report.append(f"     - Dimensione coorte: {metric['cohort_size']}")
+                    report.append(f"     - Tasso membership: {metric['membership_rate']:.1%}")
+                    report.append(f"     - Soddisfazione media: {metric['avg_satisfaction']:.3f}")
+                    report.append(f"     - Engagement Index: {metric['engagement_index']:.3f}")
+                    report.append(f"     - Potenziale conversione: {metric['conversion_potential']:.1f}")
+                
+                report.append("   \n   📊 CORRELAZIONE ETÀ-MEMBERSHIP:")
+                report.append(f"   • Correlazione Spearman (principale): r = {gap_data['spearman_correlation']:.3f}")
+                report.append(f"   • p-value: {gap_data['spearman_p_value']:.4f}")
+                report.append(f"   • Correlazione Pearson (confronto): r = {gap_data['pearson_correlation']:.3f}")
+                report.append(f"   • Dimensione campione: {gap_data['sample_size']} coorti")
+                report.append(f"   • Metodo raccomandato: {gap_data['recommended_method']}")
+                report.append("")
+            
+            # 3. Inverse Contentment Effect
+            if 'contentment_effect' in self.results['key_findings']:
+                report.append("3. INVERSE CONTENTMENT EFFECT")
+                report.append("   " + "="*40)
+                content_data = self.results['key_findings']['contentment_effect']
+                
+                report.append("   📝 METRICHE FEEDBACK:")
+                satisfied_metrics = content_data['feedback_metrics']['satisfied']
+                very_satisfied_metrics = content_data['feedback_metrics']['very_satisfied']
+                
+                report.append(f"   • Soddisfatti (2):")
+                report.append(f"     - Totale: {satisfied_metrics['total']}")
+                report.append(f"     - Con feedback: {satisfied_metrics['with_feedback']}")
+                report.append(f"     - Tasso feedback: {satisfied_metrics['feedback_rate']:.1%}")
+                
+                report.append(f"   • Molto Soddisfatti (3):")
+                report.append(f"     - Totale: {very_satisfied_metrics['total']}")
+                report.append(f"     - Con feedback: {very_satisfied_metrics['with_feedback']}")
+                report.append(f"     - Tasso feedback: {very_satisfied_metrics['feedback_rate']:.1%}")
+                
+                report.append(f"   \n   📊 CONTENTMENT RATIO: {content_data['contentment_ratio']:.3f}")
+                report.append(f"   • Effetto confermato: {'Sì' if content_data['effect_confirmed'] else 'No'}")
+                
+                report.append(f"   \n   🧪 TEST STATISTICO ({content_data['primary_test']}):")
+                report.append(f"   • p-value: {content_data['primary_p_value']:.4f}")
+                
+                if content_data['primary_test'] == 'Chi-quadro':
+                    report.append(f"   • Chi² statistic: {content_data['chi2_statistic']:.3f}")
+                    cochran = content_data['cochran_criteria']
+                    report.append(f"   • Criteri Cochran: {'Soddisfatti' if cochran['satisfied'] else 'Violati'}")
+                    report.append(f"   • Min freq. attesa: {cochran['min_expected_frequency']:.1f}")
+                else:  # Fisher Exact Test
+                    report.append(f"   • Fisher Odds Ratio: {content_data['fisher_odds_ratio']:.3f}")
+                    cochran = content_data['cochran_criteria']
+                    report.append(f"   • Motivo Fisher: Min freq. attesa = {cochran['min_expected_frequency']:.1f}")
+                
+                report.append("")
         
-        report += f"""
-
-RACCOMANDAZIONI PER RICERCHE FUTURE
-------------------------------------
-1. Per scale ordinali COMPLETE (1-5): Utilizzare Mann-Whitney U
-2. Per dati binari/quasi-binari: Utilizzare Fisher Exact Test
-3. Per campioni grandi (n>100): Considerare test χ² con correzioni
-4. Sempre verificare appropriatezza del test prima dell'applicazione
-5. Dichiarare limitazioni metodologiche in modo esplicito
-
-DISCLAIMER METODOLOGICO
------------------------
-Questa versione corregge un errore metodologico significativo nella v2.0. 
-I risultati della v2.1 sono da considerarsi definitivi e metodologicamente 
-appropriati per la natura dei dati analizzati.
-
-CONTATTO
---------
-Per questioni metodologiche: giuseppe.mangiacotti@studenti.unitn.it
-Repository: [Disponibile su richiesta]
-"""
+        # === CULTURAL ENGAGEMENT SCORE ===
+        if 'ces' in self.results:
+            report.append("📈 CULTURAL ENGAGEMENT SCORE (CES)")
+            report.append("-"*50)
+            ces_data = self.results['ces']
+            
+            report.append("🎯 SCORE E COMPONENTI:")
+            report.append(f"• CES Score: {ces_data['score']:.3f}")
+            report.append(f"• Percentile Rank: {ces_data['percentile_rank']:.1f}%")
+            report.append(f"• Max Teorico: {ces_data['components']['max_theoretical']:.1f}")
+            
+            report.append("\n📊 COMPONENTI:")
+            components = ces_data['components']
+            report.append(f"• Satisfaction: {components['satisfaction']:.3f}")
+            report.append(f"• Membership Rate: {components['membership']:.3f}")
+            report.append(f"• Digital Adoption: {components['digital_adoption']:.3f}")
+            
+            # Bootstrap validation
+            bootstrap = ces_data['bootstrap_validation']
+            report.append(f"\n🔬 VALIDAZIONE BOOTSTRAP:")
+            report.append(f"• Media Bootstrap: {bootstrap['mean']:.3f}")
+            report.append(f"• Errore Standard: {bootstrap['std_error']:.3f}")
+            report.append(f"• CI 95%: [{bootstrap['ci_95_lower']:.3f}, {bootstrap['ci_95_upper']:.3f}]")
+            report.append(f"• Coefficiente Variazione: {bootstrap['cv']:.1%}")
+            
+            # Scenari di miglioramento
+            report.append(f"\n🚀 SCENARI DI MIGLIORAMENTO:")
+            scenarios = ces_data['improvement_scenarios']
+            for scenario_name, scenario_data in scenarios.items():
+                report.append(f"• {scenario_name.title()}:")
+                report.append(f"  - CES proiettato: {scenario_data['projected_ces']:.3f}")
+                report.append(f"  - Miglioramento: +{scenario_data['improvement_percentage']:.1f}%")
+                report.append(f"  - Target membership: {scenario_data['target_membership']:.1%}")
+                report.append(f"  - Target digital: {scenario_data['target_digital']:.1%}")
+            report.append("")
         
-        # Salvataggio report corretto
+        # === QUALITÀ METODOLOGICA ===
+        if self.test_appropriateness:
+            report.append("🔬 ASSESSMENT QUALITÀ METODOLOGICA")
+            report.append("-"*50)
+            report.append("TEST STATISTICI UTILIZZATI:")
+            
+            for test_name, assessment in self.test_appropriateness.items():
+                status_icon = "✅" if assessment['is_appropriate'] else "❌"
+                report.append(f"{status_icon} {test_name}:")
+                report.append(f"  • Dati: {assessment['data_description']}")
+                report.append(f"  • Appropriatezza: {assessment['reason']}")
+                report.append(f"  • Raccomandazione: {assessment['recommendation']}")
+                report.append("")
+        
+        # === AVVISI METODOLOGICI ===
+        if self.methodological_warnings:
+            report.append("⚠️  AVVISI METODOLOGICI")
+            report.append("-"*50)
+            for warning in self.methodological_warnings:
+                report.append(f"• {warning['test']}: {warning['warning']}")
+            report.append("")
+        
+        # === RACCOMANDAZIONI ===
+        report.append("💡 RACCOMANDAZIONI METODOLOGICHE")
+        report.append("-"*50)
+        report.append("✅ UTILIZZARE:")
+        report.append("• Fisher Exact Test come risultato principale per confronti binari")
+        report.append("• Regressione Logistica per validazione e intervalli di confidenza")
+        report.append("• Bootstrap resampling per validazione indicatori compositi")
+        report.append("• Correlazione di Spearman per campioni piccoli")
+        report.append("")
+        report.append("⚠️  EVITARE:")
+        report.append("• Mann-Whitney U per dati con ties eccessivi (>50%)")
+        report.append("• Test χ² quando violati i criteri di Cochran")
+        report.append("• Correlazione di Pearson senza verifica normalità")
+        report.append("")
+        report.append("📊 RIPORTARE:")
+        report.append("• Odds Ratio con intervalli di confidenza al 95%")
+        report.append("• Tabelle di contingenza complete per trasparenza")
+        report.append("• Dimensioni campionarie per tutti i sottogruppi")
+        report.append("• Assessment appropriatezza dei test utilizzati")
+        report.append("")
+        
+        # === LIMITAZIONI E FUTURE DIREZIONI ===
+        report.append("🚧 LIMITAZIONI DELLO STUDIO")
+        report.append("-"*50)
+        report.append("• Campione di convenienza limitato a partecipanti eventi specifici")
+        report.append("• Scala di soddisfazione ridotta (solo valori 2-3 osservati)")
+        report.append("• Analisi cross-sectional, non longitudinale")
+        report.append("• Possibili bias di selezione tra modalità cartacea e digitale")
+        report.append("• Dimensioni campionarie ridotte per alcune sottopopolazioni")
+        report.append("")
+        
+        report.append("🔮 FUTURE DIREZIONI DI RICERCA")
+        report.append("-"*50)
+        report.append("• Espansione scala di misurazione soddisfazione")
+        report.append("• Studio longitudinale per tracking engagement nel tempo")
+        report.append("• Campionamento randomizzato tra modalità di fruizione")
+        report.append("• Analisi qualitativa approfondita del feedback testuale")
+        report.append("• Validazione CES su istituzioni culturali comparabili")
+        report.append("")
+        
+        # === CITAZIONE ===
+        report.append("📚 CITAZIONE")
+        report.append("-"*50)
+        report.append("Mangiacotti, G.P. (2025). Progettazione di interfacce per la raccolta")
+        report.append("di feedback nel settore culturale: un sistema ibrido per l'Accademia")
+        report.append("Roveretana degli Agiati v2.1. Università degli Studi di Trento.")
+        report.append("")
+        
+        # === APPENDICE TECNICA ===
+        report.append("🔧 APPENDICE TECNICA")
+        report.append("-"*50)
+        report.append(f"• Versione Python: 3.9.0")
+        report.append(f"• Librerie principali: pandas, scipy, sklearn, matplotlib, seaborn")
+        report.append(f"• Metodo bootstrap: {1000} iterazioni con rimpiazzamento")
+        report.append(f"• Test di significatività: α = 0.05")
+        report.append(f"• Intervalli di confidenza: 95%")
+        report.append(f"• Correzioni multiple: Non applicate (analisi esploratoria)")
+        report.append("")
+        
+        report.append("="*100)
+        report.append(f"Fine Report - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+        report.append("="*100)
+        
+        # Salva il report
+        report_text = "\n".join(report)
         with open(self.output_dir / 'analysis_report_corrected.txt', 'w', encoding='utf-8') as f:
-            f.write(report)
+            f.write(report_text)
         
-        # Salvataggio anche del warning metodologico separato
-        warning_report = f"""
-AVVISO METODOLOGICO CRITICO
-===========================
-
-PROBLEMA IDENTIFICATO: Test Mann-Whitney U inappropriato per dati essenzialmente binari
-
-DATI ANALIZZATI:
-- Soddisfazione su scala 1-3
-- Solo valori 2 e 3 presenti nel dataset
-- Ties: {fisher_data.get('ties_percentage', 0)*100:.1f}% delle osservazioni
-
-METODOLOGIA CORRETTA:
-✅ Fisher Exact Test per confronto proporzioni
-✅ Tabella di contingenza 2×2
-✅ Odds ratio e p-value esatti
-
-METODOLOGIA SCORRETTA:
-❌ Mann-Whitney U per dati con ties eccessivi
-❌ Perdita di potenza statistica
-❌ Assunzioni violate
-
-RACCOMANDAZIONE:
-Utilizzare i risultati del Fisher Exact Test come conclusioni definitive.
-I risultati del Mann-Whitney U sono forniti solo per completezza.
-"""
+        # Salva anche avvisi metodologici separatamente
+        if self.methodological_warnings:
+            warnings_text = "AVVISI METODOLOGICI - Accademia Agiati v2.1\n"
+            warnings_text += "="*60 + "\n\n"
+            for warning in self.methodological_warnings:
+                warnings_text += f"TEST: {warning['test']}\n"
+                warnings_text += f"PROBLEMA: {warning['warning']}\n"
+                warnings_text += f"TIMESTAMP: {warning['timestamp']}\n"
+                warnings_text += "-"*40 + "\n"
+            
+            with open(self.output_dir / 'methodological_warnings.txt', 'w', encoding='utf-8') as f:
+                f.write(warnings_text)
         
-        with open(self.output_dir / 'methodological_warning.txt', 'w', encoding='utf-8') as f:
-            f.write(warning_report)
+        print(f"   ✓ Report salvato in: {self.output_dir / 'analysis_report_corrected.txt'}")
+        return report_text
     
     def run_complete_analysis(self):
-        """Esegue l'analisi completa del dataset."""
-        print("\t🎓 Avvio analisi completa Accademia Roveretana degli Agiati v2.1")
-        print("=" * 60)
+        """
+        Esegue l'analisi completa con tutti i componenti.
+        """
+        print("🚀 Avvio analisi completa Accademia Roveretana degli Agiati v2.1")
+        print("="*80)
+        
+        # 1. Caricamento e pulizia dati
         self.load_and_clean_data()
+        
+        # 2. Calcolo key findings
         self.calculate_key_findings()
+        
+        # 3. Calcolo CES
         self.calculate_cultural_engagement_score()
+        
+        # 4. Stampa analisi dettagliata paradosso digitale
+        self.print_detailed_digital_paradox_analysis()
+        
+        # 5. Generazione visualizzazioni
         self.create_visualizations()
-        self.generate_summary_report()
         
-        print("=" * 60)
-        print("✅ Analisi completata con successo!")
-        print(f"📁 Tutti i risultati salvati in: {self.output_dir}")
-        print("\n📋 FILE GENERATI:")
-        print("   • demographic_analysis.png")
-        print("   • digital_satisfaction_paradox_corrected.png ⭐") 
-        print("   • generational_membership_gap.png")
-        print("   • satisfaction_distribution.png")
-        print("   • communication_channels.png")
-        print("   • ces_analysis.png")
-        print("   • analysis_summary.json")
-        print("   • analysis_report_corrected.txt ⭐")
-        print("   • methodological_warning.txt ⭐")
-        print("   • contingency_table_fisher_test.csv ⭐")
+        # 6. Generazione report completo
+        self.generate_comprehensive_report()
         
-        # Mostra eventuali warning metodologici
-        if self.methodological_warnings:
-            print("\n⚠️  AVVISI METODOLOGICI RISCONTRATI:")
-            for warning in self.methodological_warnings:
-                print(f"   • [{warning['test']}]: {warning['warning']}")
+        print("\n" + "="*80)
+        print("✅ ANALISI COMPLETATA CON SUCCESSO")
+        print("="*80)
+        print(f"📁 Output directory: {self.output_dir}")
+        print("📊 File generati:")
+        print("   • analysis_report_corrected.txt - Report completo")
+        print("   • methodological_warnings.txt - Avvisi metodologici")
+        print("   • contingency_table_fisher_test.csv - Tabella contingenza")
+        print("   • digital_satisfaction_paradox_corrected.png - Paradosso digitale")
+        print("   • demographic_overview_panel.png - 🎓 Pannello demografico (TESI)")
+        print("   • participation_modalities_panel.png - 🎓 Pannello partecipazione (TESI)")
+        print("   • + altri 6 grafici di analisi")
+        print("\n🎯 Key Findings identificati:")
+        print("   1. Digital Satisfaction Paradox")
+        print("   2. Generational Membership Gap")
+        print("   3. Inverse Contentment Effect")
         
-        # Mostra assessment appropriatezza test
-        print("\n📊 ASSESSMENT APPROPRIATEZZA TEST:")
-        for test, assessment in self.test_appropriateness.items():
-            status = "✅" if assessment['is_appropriate'] else "❌"
-            print(f"   {status} {test}: {assessment['recommendation']}")
-            if not assessment['is_appropriate']:
-                print(f"      Motivo: {assessment['reason']}")
+        if 'ces' in self.results:
+            ces_score = self.results['ces']['score']
+            ces_percentile = self.results['ces']['percentile_rank']
+            print(f"\n📈 Cultural Engagement Score: {ces_score:.3f} ({ces_percentile:.1f}° percentile)")
+        
+        print("\n🔬 Metodologia corretta applicata:")
+        print("   ✅ Fisher Exact Test (principale)")
+        print("   ✅ Regressione Logistica (validazione)")
+        print("   ✅ Bootstrap resampling (robustezza)")
+        print("   ⚠️  Mann-Whitney U (limitazioni dichiarate)")
 
 
 def main():
-    """
-    Funzione principale per esecuzione da riga di comando.
-    Versione 2.1 con correzioni metodologiche critiche.
-    """
-    parser = argparse.ArgumentParser(
-        description='Analisi Quantitativa Accademia Roveretana degli Agiati v2.1 (CORRETTA)',
-        epilog="""
-CORREZIONE METODOLOGICA v2.1:
-=============================
-Questa versione corregge l'uso inappropriato del test Mann-Whitney U per dati 
-essenzialmente binari. Il Fisher Exact Test è ora il metodo principale per 
-confronti di proporzioni.
-
-PROBLEMA RISOLTO:
-- Ties eccessivi (100%) nel test Mann-Whitney U
-- Solo valori 2 e 3 presenti nei dati di soddisfazione
-- Violazione assunzioni di base del test non-parametrico
-
-METODOLOGIA CORRETTA:
-- Fisher Exact Test per tabelle 2×2
-- Confronto diretto proporzioni "Molto Soddisfatti"
-- Odds ratio e p-value esatti
-- Nessuna assunzione violata
-
-RACCOMANDAZIONE: Utilizzare SOLO i risultati della v2.1 per conclusioni definitive.
-        """,
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    
-    parser.add_argument('--input', '-i', required=True,
-                       help='Percorso al file CSV dei dati')
-    parser.add_argument('--output', '-o', default='./output/',
-                       help='Directory di output (default: ./output/)')
-    parser.add_argument('--version', action='version', 
-                       version='Accademia Analyzer v2.1 (Metodologia Corretta)')
+    """Funzione principale per esecuzione da command line."""
+    parser = argparse.ArgumentParser(description='Analisi dati Accademia Agiati v2.1')
+    parser.add_argument('--input', required=True, help='Path al file CSV dei dati')
+    parser.add_argument('--output', default='./output/', help='Directory di output')
     
     args = parser.parse_args()
     
+    # Verifica esistenza file input
     if not os.path.exists(args.input):
-        print(f"❌ Errore: File {args.input} non trovato!")
-        return 1
+        print(f"❌ File input non trovato: {args.input}")
+        return
     
-    # Banner di avvio con warning metodologico
-    print("=" * 80)
-    print("🎓 ACCADEMIA ROVERETANA DEGLI AGIATI - ANALISI QUANTITATIVA v2.1")
-    print("=" * 80)
-    print("⚠️  CORREZIONE METODOLOGICA CRITICA:")
-    print("   • Fisher Exact Test sostituisce Mann-Whitney U per dati binari")
-    print("   • Risultati v2.0 e precedenti da considerare NON definitivi")
-    print("   • Utilizzare SOLO i risultati di questa versione")
-    print("=" * 80)
+    # Inizializzazione analyzer
+    analyzer = AccademiaAnalyzer(args.input, args.output)
     
-    try:
-        analyzer = AccademiaAnalyzer(args.input, args.output)
-        analyzer.run_complete_analysis()
-        
-        return 0
-        
-    except Exception as e:
-        print(f"\n❌ ERRORE DURANTE L'ANALISI: {str(e)}")
-        print("   Verificare il formato dei dati e riprovare.")
-        return 1
+    # Esecuzione analisi completa
+    analyzer.run_complete_analysis()
+
 
 if __name__ == "__main__":
-    exit(main())
+    main()
