@@ -774,13 +774,19 @@ class AccademiaAnalyzer:
                 membership_rate = (cohort['socio_std'] == 'Sì').mean()
                 avg_satisfaction = cohort['soddisfazione_num'].mean()
                 engagement_index = membership_rate * avg_satisfaction
-                
+
+                cohort['cognitive_engagement'] = (
+                    cohort['Approfondimenti'].notna().astype(int) + 
+                    cohort['Proposte'].notna().astype(int)
+                )
+                cognitive_eng_mean = cohort['cognitive_engagement'].mean()
                 engagement_data.append({
                     'age_group': age,
                     'cohort_size': len(cohort),
                     'membership_rate': membership_rate,
                     'avg_satisfaction': avg_satisfaction,
                     'engagement_index': engagement_index,
+                    'cognitive_engagement_mean': cognitive_eng_mean,
                     'conversion_potential': (1 - membership_rate) * avg_satisfaction * len(cohort)
                 })
         
@@ -944,7 +950,7 @@ class AccademiaAnalyzer:
             'p_value': primary_p_value
         }
     
-    def calculate_cultural_engagement_score(self) -> dict:
+    def _old_calculate_cultural_engagement_score(self) -> dict:
         """
         Calcola il Cultural Engagement Score (CES) e le sue componenti.
         
@@ -974,9 +980,63 @@ class AccademiaAnalyzer:
                 'satisfaction': satisfaction_component,
                 'membership': membership_rate,
                 'digital_adoption': digital_adoption_rate,
-                'max_theoretical': 2.0
+                'max_theoretical': 4.0
             },
-            'percentile_rank': (ces_score / 2.0) * 100,
+            'percentile_rank': (ces_score / 4.0) * 100,
+            'bootstrap_validation': {
+                'mean': np.mean(bootstrap_scores),
+                'std_error': np.std(bootstrap_scores),
+                'ci_95_lower': np.percentile(bootstrap_scores, 2.5),
+                'ci_95_upper': np.percentile(bootstrap_scores, 97.5),
+                'cv': np.std(bootstrap_scores) / np.mean(bootstrap_scores)
+            }
+        }
+        
+        # Scenari di miglioramento
+        ces_results['improvement_scenarios'] = self._generate_improvement_scenarios(ces_results['components'])
+        
+        self.results['ces'] = ces_results
+        return ces_results
+    
+    def calculate_cultural_engagement_score(self) -> dict:
+        """
+        Calcola il Cultural Engagement Score (CES) e le sue componenti.
+        
+        Returns:
+        --------
+        dict
+            Componenti e score finale del CES
+        """
+        print("📈 Calcolo Cultural Engagement Score...")
+        
+        # Componenti del CES
+        avg_satisfaction = self.df['soddisfazione_num'].mean()
+        satisfaction_component = (avg_satisfaction - 1) / 2  # Normalizzazione 0-1
+        
+        membership_rate = (self.df['socio_std'] == 'Sì').mean()
+        self.df['cognitive_engagement'] = (
+            self.df['Approfondimenti'].notna().astype(int) + 
+            self.df['Proposte'].notna().astype(int)
+        )
+        cognitive_engagement_mean = self.df['cognitive_engagement'].mean()/2 # Normalizzazione 0-1
+        # Formula CES: (S+1/2) × (1 + M) × (1 + D)
+        ces_score = satisfaction_component * (1 + membership_rate)**0.5 * (1 + cognitive_engagement_mean)**0.5
+        max_satisfaction = 1.0
+        max_membership = 1.0
+        max_cognitive = 1.0
+        maximum_ces = max_satisfaction * (1 + max_membership)**0.5 * (1 + max_cognitive)**0.5
+        # Validazione bootstrap
+        bootstrap_scores = self._bootstrap_ces_validation(n_iterations=1000)
+        
+        ces_results = {
+            'score': ces_score,
+            'components': {
+                'satisfaction': satisfaction_component,
+                'membership': membership_rate,
+                'cognitive_engagement_mean': cognitive_engagement_mean,
+                'max_theoretical': maximum_ces
+            },
+            'percentile_rank': (ces_score / maximum_ces) * 100,
             'bootstrap_validation': {
                 'mean': np.mean(bootstrap_scores),
                 'std_error': np.std(bootstrap_scores),
@@ -995,18 +1055,19 @@ class AccademiaAnalyzer:
     def _bootstrap_ces_validation(self, n_iterations: int = 1000) -> list:
         """Validazione bootstrap del CES."""
         bootstrap_scores = []
-        
         for _ in range(n_iterations):
             # Campionamento con rimpiazzamento
-            sample = self.df.sample(n=len(self.df), replace=True)
-            
+            rng = np.random.RandomState()
+            sample = self.df.sample(n=len(self.df), replace=True, random_state=rng)            
             # Calcolo CES per il campione
             avg_sat = sample['soddisfazione_num'].mean()
-            sat_comp = avg_sat / 3
+            sat_comp = (avg_sat - 1 ) / 2
             mem_rate = (sample['socio_std'] == 'Sì').mean()
-            dig_rate = (sample['Fonte'] == 'Webinar').mean()
+            cog_rate = (sample['Approfondimenti'].notna().astype(int) + 
+                        sample['Proposte'].notna().astype(int)
+                        ).mean() / 2
             
-            ces = sat_comp * (1 + mem_rate) * (1 + dig_rate)
+            ces = sat_comp * (1 + mem_rate)**0.5 * (1 + cog_rate)**0.5
             bootstrap_scores.append(ces)
         
         return bootstrap_scores
@@ -1022,15 +1083,15 @@ class AccademiaAnalyzer:
         results = {}
         baseline_ces = (baseline_components['satisfaction'] * 
                        (1 + baseline_components['membership']) * 
-                       (1 + baseline_components['digital_adoption']))
+                       (1 + baseline_components['cognitive_engagement_mean']))
         
         for scenario, changes in scenarios.items():
             new_membership = min(1.0, baseline_components['membership'] + changes['membership'])
-            new_digital = min(1.0, baseline_components['digital_adoption'] + changes['digital'])
+            new_cognitive = min(1.0, baseline_components['cognitive_engagement_mean'] + changes['digital'])
             
             new_ces = (baseline_components['satisfaction'] * 
                       (1 + new_membership) * 
-                      (1 + new_digital))
+                      (1 + new_cognitive))
             
             improvement = ((new_ces - baseline_ces) / baseline_ces) * 100
             
@@ -1038,7 +1099,7 @@ class AccademiaAnalyzer:
                 'projected_ces': new_ces,
                 'improvement_percentage': improvement,
                 'target_membership': new_membership,
-                'target_digital': new_digital
+                'target_cognitive': new_cognitive
             }
         
         return results
@@ -1568,12 +1629,14 @@ class AccademiaAnalyzer:
     def _plot_generational_membership_gap(self):
         """Visualizza il Generational Membership Gap con tema purple."""
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        fig.suptitle('Generational Membership Gap Analysis', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
+        fig.suptitle('Analisi del Divario Associazionistico Generazionale', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
         gap_data = self.results['key_findings']['generational_gap']['engagement_metrics']
         age_groups = [d['age_group'] for d in gap_data]
         membership_rates = [d['membership_rate'] * 100 for d in gap_data]
         engagement_indices = [d['engagement_index'] for d in gap_data]
+        cognitive_engagement = [d['cognitive_engagement_mean'] for d in gap_data]
+        complex_engagement = [(cognitive + engagement) / 2 for cognitive, engagement in zip(cognitive_engagement, engagement_indices)]
         
         # 1. Percentuale soci per età
         bars1 = axes[0,0].bar(age_groups, membership_rates, 
@@ -1592,14 +1655,32 @@ class AccademiaAnalyzer:
                       color=PURPLE_PALETTE['dark_purple'])
         
         # 2. Engagement Index
-        bars2 = axes[0,1].bar(age_groups, engagement_indices, 
-                             color=PURPLE_PALETTE['sage'], alpha=0.8,
-                             edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5)
-        axes[0,1].set_title('Engagement Index per Fascia d\'Età', color=PURPLE_PALETTE['dark_purple'])
-        axes[0,1].set_ylabel('Engagement Index')
-        axes[0,1].tick_params(axis='x', rotation=45, colors=PURPLE_PALETTE['dark_purple'])
+        bar_width = 0.25  # Adjusted width of the bars
+        axes[0,1].set(ylim=(0, 2.0))
+        x_positions = np.arange(len(age_groups))  # Positions for the bars
+
+        # Engagement Index bars
+        bars_engagement = axes[0,1].bar(x_positions - bar_width, engagement_indices, 
+                width=bar_width, color=PURPLE_PALETTE['sage'], alpha=0.8,
+                edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5, label='Institutional Engagement Index (IEI)')
+
+        # Cognitive Engagement Mean bars
+        bars_cognitive = axes[0,1].bar(x_positions, cognitive_engagement, 
+                   width=bar_width, color=PURPLE_PALETTE['royal_purple'], alpha=0.8,
+                   edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5, label='Cognitive Engagement Index (CEI)')
+
+        # Composite Engagement Score bars
+        bars_complex = axes[0,1].bar(x_positions + bar_width, complex_engagement, 
+                   width=bar_width, color=PURPLE_PALETTE['warm_gold'], alpha=0.8,
+                   edgecolor=PURPLE_PALETTE['dark_purple'], linewidth=1.5, label='Composite Engagement Score')
+
+        # Configure the axes
+        axes[0,1].set_title('Engagement Metrics per Fascia d\'Età', color=PURPLE_PALETTE['dark_purple'])
+        axes[0,1].set_ylabel('Engagement Metrics')
+        axes[0,1].set_xticks(x_positions)
+        axes[0,1].set_xticklabels(age_groups, rotation=45, color=PURPLE_PALETTE['dark_purple'])
         axes[0,1].grid(alpha=0.3, color=PURPLE_PALETTE['light_purple'])
-        
+        axes[0,1].legend(loc='upper left', fontsize=10, frameon=False)
         # 3. Heatmap distribuzione
         crosstab = pd.crosstab(self.df['eta_std'], self.df['socio_std'], margins=True)
         # Create purple colormap
@@ -1896,14 +1977,14 @@ class AccademiaAnalyzer:
         ces_data = self.results['ces']
         
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        fig.suptitle('Cultural Engagement Score (CES) Analysis', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
+        fig.suptitle('Analisi del Cultural Engagement Score (CES)', fontsize=16, fontweight='bold', color=PURPLE_PALETTE['dark_purple'])
         
         # 1. Componenti del CES
         components = ces_data['components']
         comp_names = ['Satisfaction\nFoundation', 'Membership\nAmplification', 
-                     'Digital\nAcceleration']
+                     'Cognitive\nEngagement']
         comp_values = [components['satisfaction'], components['membership'], 
-                      components['digital_adoption']]
+                      components['cognitive_engagement_mean']]
         
         colors_comp = [PURPLE_PALETTE['warm_gold'], PURPLE_PALETTE['royal_purple'], PURPLE_PALETTE['sage']]
         bars1 = axes[0,0].bar(comp_names, comp_values, 
@@ -2164,7 +2245,9 @@ class AccademiaAnalyzer:
                     report.append(f"     - Dimensione coorte: {metric['cohort_size']}")
                     report.append(f"     - Tasso membership: {metric['membership_rate']:.1%}")
                     report.append(f"     - Soddisfazione media: {metric['avg_satisfaction']:.3f}")
-                    report.append(f"     - Engagement Index: {metric['engagement_index']:.3f}")
+                    report.append(f"     - Institutional Engagement Index: {metric['engagement_index']:.3f}")
+                    report.append(f"     - Cognitive Engagement Index: {metric['cognitive_engagement_mean']:.3f}")
+                    report.append(f"     - Composite Engagement Index: {(metric['cognitive_engagement_mean'] + metric['engagement_index']) / 2 :.3f}")
                     report.append(f"     - Potenziale conversione: {metric['conversion_potential']:.1f}")
                 
                 report.append("   \n   📊 CORRELAZIONE ETÀ-MEMBERSHIP:")
@@ -2228,8 +2311,8 @@ class AccademiaAnalyzer:
             components = ces_data['components']
             report.append(f"• Satisfaction: {components['satisfaction']:.3f}")
             report.append(f"• Membership Rate: {components['membership']:.3f}")
-            report.append(f"• Digital Adoption: {components['digital_adoption']:.3f}")
-            
+            report.append(f"• Cognitive Engagement: {components['cognitive_engagement_mean']:.3f}")
+
             # Bootstrap validation
             bootstrap = ces_data['bootstrap_validation']
             report.append(f"\n🔬 VALIDAZIONE BOOTSTRAP:")
@@ -2246,7 +2329,7 @@ class AccademiaAnalyzer:
                 report.append(f"  - CES proiettato: {scenario_data['projected_ces']:.3f}")
                 report.append(f"  - Miglioramento: +{scenario_data['improvement_percentage']:.1f}%")
                 report.append(f"  - Target membership: {scenario_data['target_membership']:.1%}")
-                report.append(f"  - Target digital: {scenario_data['target_digital']:.1%}")
+                report.append(f"  - Target engagement cognitivo: {scenario_data['target_cognitive']:.1%}")
             report.append("")
         
         # === QUALITÀ METODOLOGICA ===
